@@ -1,0 +1,679 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>WINDDATA - Bankable wind data. Delivered turnkey.</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-secondary-container": "#65655b",
+                      "surface-variant": "#e4e2dc",
+                      "on-secondary": "#ffffff",
+                      "secondary-fixed": "#e5e3d6",
+                      "background": "#fbf9f2",
+                      "secondary-fixed-dim": "#c9c7bb",
+                      "surface-container-highest": "#e4e2dc",
+                      "primary-fixed": "#ffdad2",
+                      "on-error": "#ffffff",
+                      "on-secondary-fixed-variant": "#47473e",
+                      "surface-container-low": "#f6f4ec",
+                      "on-tertiary-fixed": "#1b1c15",
+                      "inverse-primary": "#ffb4a3",
+                      "on-surface-variant": "#59413b",
+                      "outline-variant": "#e1bfb7",
+                      "error": "#ba1a1a",
+                      "surface-bright": "#fbf9f2",
+                      "secondary-container": "#e5e3d6",
+                      "inverse-on-surface": "#f3f1ea",
+                      "primary-fixed-dim": "#ffb4a3",
+                      "on-primary-fixed": "#3d0600",
+                      "outline": "#8d706a",
+                      "error-container": "#ffdad6",
+                      "inverse-surface": "#30312c",
+                      "on-background": "#1b1c18",
+                      "on-tertiary": "#ffffff",
+                      "surface": "#fbf9f2",
+                      "primary-container": "#bd391b",
+                      "on-tertiary-container": "#ebe9dc",
+                      "surface-tint": "#af2f12",
+                      "on-primary-fixed-variant": "#8b1a00",
+                      "tertiary-fixed": "#e4e3d6",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-dim": "#dcdad3",
+                      "tertiary": "#515148",
+                      "on-tertiary-fixed-variant": "#47473e",
+                      "surface-container-high": "#eae8e1",
+                      "surface-container": "#f0eee7",
+                      "tertiary-container": "#69695f",
+                      "on-error-container": "#93000a",
+                      "tertiary-fixed-dim": "#c8c7bb",
+                      "primary": "#9b2003",
+                      "secondary": "#5f5f55",
+                      "on-secondary-fixed": "#1c1c14",
+                      "on-surface": "#1b1c18",
+                      "on-primary": "#ffffff",
+                      "on-primary-container": "#ffe2db"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "margin-desktop": "64px",
+                      "container-max": "1200px",
+                      "gutter": "24px",
+                      "base": "8px",
+                      "margin-mobile": "16px"
+              },
+              "fontFamily": {
+                      "body-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "data-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "label-caps": [
+                              "JetBrains Mono"
+                      ],
+                      "headline-xl": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-lg-mobile": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "caption": [
+                              "Hanken Grotesk"
+                      ]
+              },
+              "fontSize": {
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "data-lg": [
+                              "20px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.08em",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "headline-xl": [
+                              "56px",
+                              {
+                                      "lineHeight": "60px",
+                                      "letterSpacing": "-0.03em",
+                                      "fontWeight": "800"
+                              }
+                      ],
+                      "headline-lg-mobile": [
+                              "28px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "36px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "caption": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .data-bar-animation {
+            animation: growBar 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            transform-origin: left;
+            transform: scaleX(0);
+        }
+        @keyframes growBar {
+            to { transform: scaleX(1); }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopNavBar -->
+<header class="w-full top-0 sticky bg-background dark:bg-background border-b border-surface-variant dark:border-outline-variant z-50">
+<div class="max-w-container-max mx-auto flex items-center justify-between px-margin-desktop py-base">
+<a class="font-headline-lg text-headline-lg font-black tracking-tighter text-on-background dark:text-on-background" href="#">WINDDATA</a>
+<nav class="hidden md:flex gap-gutter items-center h-full">
+<a class="text-primary font-bold border-b-2 border-primary pb-1 font-body-md text-body-md hover:text-primary transition-colors duration-200" href="#">LiDAR Systems</a>
+<a class="text-secondary dark:text-secondary-fixed-dim font-body-md text-body-md hover:text-primary transition-colors duration-200" href="#">Measurement</a>
+<a class="text-secondary dark:text-secondary-fixed-dim font-body-md text-body-md hover:text-primary transition-colors duration-200" href="#">Analytics</a>
+<a class="text-secondary dark:text-secondary-fixed-dim font-body-md text-body-md hover:text-primary transition-colors duration-200" href="#">Compliance</a>
+<a class="text-secondary dark:text-secondary-fixed-dim font-body-md text-body-md hover:text-primary transition-colors duration-200" href="#">Contact</a>
+</nav>
+<div class="hidden md:flex items-center gap-base">
+<button class="font-label-caps text-label-caps uppercase px-4 py-2 border border-tertiary text-on-background hover:border-primary hover:text-primary transition-colors">Book Call</button>
+<button class="font-label-caps text-label-caps uppercase px-4 py-2 bg-primary-container text-on-primary-container hover:bg-surface-tint transition-colors">Request Campaign</button>
+</div>
+<button class="md:hidden p-2 text-on-background">
+<span class="material-symbols-outlined">menu</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow flex flex-col justify-center py-20">
+<div class="max-w-container-max mx-auto px-margin-desktop w-full grid grid-cols-1 lg:grid-cols-12 gap-gutter items-center">
+<!-- Text Content -->
+<div class="lg:col-span-7 flex flex-col gap-6 pr-0 lg:pr-12">
+<!-- Editorial Header Element -->
+<div class="flex items-center gap-4 mb-4">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Turnkey Solution</span>
+<div class="h-[1px] flex-grow bg-[#C6C5B9]"></div>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-background">
+                    Bankable wind data.<br>
+                    Delivered turnkey.
+                </h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl">
+                    Complete LiDAR measurement campaigns for onshore wind projects — from deployment and monitoring to quality-controlled data delivery.
+                </p>
+<div class="flex flex-col sm:flex-row gap-4 mt-8">
+<button class="font-label-caps text-label-caps uppercase px-8 py-4 bg-primary-container text-on-primary-container hover:bg-surface-tint transition-colors flex items-center justify-center">
+                        Request a Campaign
+                    </button>
+<button class="font-label-caps text-label-caps uppercase px-8 py-4 border border-tertiary text-on-background hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-2 group">
+                        Book a technical call
+                        <span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Technical Schematic / Data Viz Element -->
+<div class="lg:col-span-5 mt-16 lg:mt-0 relative">
+<!-- Schematic Container -->
+<div class="border border-[#D1D0C5] bg-surface-container-low p-8 relative flex items-center justify-center overflow-hidden">
+<!-- Decorative corner markers -->
+<div class="absolute top-0 left-0 w-2 h-2 border-t border-l border-tertiary -translate-x-[1px] -translate-y-[1px]"></div>
+<div class="absolute top-0 right-0 w-2 h-2 border-t border-r border-tertiary translate-x-[1px] -translate-y-[1px]"></div>
+<div class="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-tertiary -translate-x-[1px] translate-y-[1px]"></div>
+<div class="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-tertiary translate-x-[1px] translate-y-[1px]"></div>
+<img alt="ZX-300e LiDAR Unit" class="w-full h-auto max-h-[400px] object-contain mix-blend-multiply" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAqjBzB0axZInpzlpggiUYBcaSs0mpFf7feIG65aE_Y_zoCI0hn5kq4xN1lhCl6k_XmHHFsa9nt7UPw_4MI1FE-ste576XkyU7Gj_sbHmvyy-bh7Ydh-muoXg35TFHlvkTj_Boko2tnpEUfTUWwXQgV2vwvLT365zAho51UbkyOh_ODfXTBILDKxBYviB6imJBBfbiwS5J3jkEawFQOEWJuO6Bj0B--h2eFEzMTeV0Ol8GbbYMjJoSxXSKksiUk9HHO6mc">
+</div>
+</div>
+</div>
+</main>
+<section class="py-20 bg-background border-t border-surface-variant dark:border-outline-variant">
+<div class="max-w-container-max mx-auto px-margin-desktop">
+<!-- Centered Header -->
+<div class="text-center max-w-3xl mx-auto mb-16">
+<h2 class="font-headline-lg text-headline-lg text-on-background mb-6">Reliable data. Less complexity.</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                A successful wind measurement campaign requires more than a LiDAR. We combine measurement technology, autonomous power, remote monitoring and wind engineering expertise into one managed service.
+            </p>
+</div>
+<!-- Three columns with thin lines -->
+<div class="grid grid-cols-1 md:grid-cols-3">
+<!-- Column 1 -->
+<div class="flex flex-col gap-4 py-8 md:py-4 md:pr-12">
+<h3 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Complete Campaign</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Planning, deployment, commissioning and decommissioning.</p>
+</div>
+<!-- Column 2 -->
+<div class="flex flex-col gap-4 py-8 md:py-4 md:px-12 border-t md:border-t-0 md:border-l md:border-r border-surface-variant dark:border-outline-variant">
+<h3 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Continuous Monitoring</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Remote monitoring of equipment performance and incoming data.</p>
+</div>
+<!-- Column 3 -->
+<div class="flex flex-col gap-4 py-8 md:py-4 md:pl-12 border-t md:border-t-0 border-surface-variant dark:border-outline-variant">
+<h3 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Quality-Controlled Data</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Structured datasets and reporting ready for your engineering workflow.</p>
+</div>
+</div>
+</div>
+</section>
+<section class="bg-surface-container-low border-y border-surface-variant py-gutter">
+<div class="max-w-container-max mx-auto px-margin-desktop">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter">
+<!-- Item 1 -->
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary text-headline-lg">verified</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Standard</span>
+<span class="font-body-md text-body-md font-bold text-on-background">IEC-Classified LiDAR Technology</span>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary text-headline-lg">monitoring</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Uptime</span>
+<span class="font-body-md text-body-md font-bold text-on-background">24/7 Remote Monitoring</span>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary text-headline-lg">precision_manufacturing</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Reliability</span>
+<span class="font-body-md text-body-md font-bold text-on-background">Autonomous Operation</span>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary text-headline-lg">analytics</span>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Integrity</span>
+<span class="font-body-md text-body-md font-bold text-on-background">Quality-Controlled Data</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Timeline Section -->
+<section class="py-20 bg-background">
+<div class="max-w-container-max mx-auto px-margin-desktop">
+<h2 class="font-headline-lg text-headline-lg text-on-background mb-16">From site to dataset.</h2>
+<div class="relative">
+<!-- Horizontal Line -->
+<div class="hidden md:block absolute top-[7px] left-0 right-0 h-[1px] bg-[#D1D0C5]"></div>
+<div class="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8 relative z-10">
+<!-- Step 1 -->
+<div class="flex flex-col gap-4">
+<div class="hidden md:flex items-center mb-2">
+<div class="w-4 h-4 rounded-full border border-primary bg-background flex items-center justify-center -ml-[7px]">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+</div>
+</div>
+<h3 class="font-label-caps text-label-caps text-primary uppercase tracking-widest">01 — PLAN</h3>
+<p class="font-body-md text-body-md text-on-surface-variant pr-4">We define measurement objectives, heights, campaign duration and site requirements.</p>
+</div>
+<!-- Step 2 -->
+<div class="flex flex-col gap-4">
+<div class="hidden md:flex items-center mb-2">
+<div class="w-4 h-4 rounded-full border border-primary bg-background flex items-center justify-center -ml-[7px]">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+</div>
+</div>
+<h3 class="font-label-caps text-label-caps text-primary uppercase tracking-widest">02 — DEPLOY</h3>
+<p class="font-body-md text-body-md text-on-surface-variant pr-4">We transport, install and commission the LiDAR and autonomous power system.</p>
+</div>
+<!-- Step 3 -->
+<div class="flex flex-col gap-4">
+<div class="hidden md:flex items-center mb-2">
+<div class="w-4 h-4 rounded-full border border-primary bg-background flex items-center justify-center -ml-[7px]">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+</div>
+</div>
+<h3 class="font-label-caps text-label-caps text-primary uppercase tracking-widest">03 — MONITOR</h3>
+<p class="font-body-md text-body-md text-on-surface-variant pr-4">System performance and incoming measurements are continuously monitored.</p>
+</div>
+<!-- Step 4 -->
+<div class="flex flex-col gap-4">
+<div class="hidden md:flex items-center mb-2">
+<div class="w-4 h-4 rounded-full border border-primary bg-background flex items-center justify-center -ml-[7px]">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+</div>
+</div>
+<h3 class="font-label-caps text-label-caps text-primary uppercase tracking-widest">04 — DELIVER</h3>
+<p class="font-body-md text-body-md text-on-surface-variant pr-4">Quality-controlled wind data and campaign reporting are delivered throughout the project.</p>
+</div>
+</div>
+</div>
+</div>
+</section><section class="py-20 bg-background border-t border-surface-variant">
+<div class="max-w-container-max mx-auto px-margin-desktop">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter items-center">
+<!-- Left Side: Content -->
+<div class="lg:col-span-7 flex flex-col gap-6">
+<h2 class="font-headline-lg text-headline-lg text-on-background">Data you can build decisions on.</h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl">
+          Wind measurements influence energy yield assessments, turbine selection and investment decisions. Campaign quality cannot be an afterthought.
+        </p>
+<ul class="flex flex-col gap-4 mt-4">
+<li class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-sm">check_circle</span>
+<span class="font-body-md text-on-background">IEC-classified LiDAR technology</span>
+</li>
+<li class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-sm">description</span>
+<span class="font-body-md text-on-background">Documented commissioning</span>
+</li>
+<li class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-sm">sensors</span>
+<span class="font-body-md text-on-background">Remote monitoring</span>
+</li>
+<li class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-sm">rule</span>
+<span class="font-body-md text-on-background">Systematic quality control</span>
+</li>
+<li class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-sm">history_edu</span>
+<span class="font-body-md text-on-background">Traceable campaign reporting</span>
+</li>
+</ul>
+<a class="font-label-caps text-label-caps text-primary uppercase tracking-widest flex items-center gap-2 mt-4 hover:underline group" href="#">
+          Explore our data quality process
+          <span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</a>
+</div>
+<!-- Right Side: Dashboard Placeholder -->
+<div class="lg:col-span-5 mt-12 lg:mt-0">
+<div class="border border-[#D1D0C5] bg-surface-container-low p-4 rounded-lg shadow-sm relative overflow-hidden">
+<!-- Browser-like header -->
+<div class="flex gap-1.5 mb-4 border-b border-[#D1D0C5] pb-3">
+<div class="w-2 h-2 rounded-full bg-[#D1D0C5]"></div>
+<div class="w-2 h-2 rounded-full bg-[#D1D0C5]"></div>
+<div class="w-2 h-2 rounded-full bg-[#D1D0C5]"></div>
+</div>
+<div class="aspect-video bg-white flex items-center justify-center overflow-hidden">
+<img alt="Wind Data Analytics Dashboard" class="w-full h-full object-cover mix-blend-multiply opacity-90" src="https://lh3.googleusercontent.com/aida/AP1WRLv0pTgK4pXpyLcCcmTREzJu9HbH7zj5YX4ME-pLStR_r-_GQKxEzSYjfgTiBfIutoHkirI6B1rnVnbG7LUYxgM5tbNFcN2kVjcO5lHQQjGbjf66YmzXROSe3qm1hq7Y3gPzwcvLRz-FUFh2f1vGRueU-9xhtMS6_kgUE9KfuXPkJg4vVBSUcQYKs6xJ9xzJUlbvD6tZ0dx6Fsq2QTUyieyNouzKRixZmVkR5StrLJ-7DIioxCKpObXlDbQR">
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Projects Section -->
+<section class="py-20 bg-background border-t border-surface-variant dark:border-outline-variant">
+<div class="max-w-container-max mx-auto px-margin-desktop">
+<h2 class="font-headline-lg text-headline-lg text-on-background mb-16">Built for real wind projects.</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter">
+<!-- Card 1 -->
+<div class="p-8 border border-surface-container bg-surface-container-low rounded-lg relative overflow-hidden flex flex-col h-full hover:border-surface-variant transition-colors group">
+<span class="absolute -bottom-4 -right-2 text-[120px] font-black text-surface-variant opacity-30 leading-none z-0 group-hover:text-surface-dim transition-colors duration-500">01</span>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary text-3xl mb-6">assessment</span>
+<h3 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest mb-4">Wind Resource Assessment</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Collect wind measurements for greenfield project development.</p>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="p-8 border border-surface-container bg-surface-container-low rounded-lg relative overflow-hidden flex flex-col h-full hover:border-surface-variant transition-colors group">
+<span class="absolute -bottom-4 -right-2 text-[120px] font-black text-surface-variant opacity-30 leading-none z-0 group-hover:text-surface-dim transition-colors duration-500">02</span>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary text-3xl mb-6">height</span>
+<h3 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest mb-4">Met Mast Complement</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Extend measurement heights and improve understanding of the rotor-swept wind profile.</p>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="p-8 border border-surface-container bg-surface-container-low rounded-lg relative overflow-hidden flex flex-col h-full hover:border-surface-variant transition-colors group">
+<span class="absolute -bottom-4 -right-2 text-[120px] font-black text-surface-variant opacity-30 leading-none z-0 group-hover:text-surface-dim transition-colors duration-500">03</span>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary text-3xl mb-6">autorenew</span>
+<h3 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest mb-4">Repowering</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Measure wind conditions at modern turbine hub and rotor heights.</p>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="p-8 border border-surface-container bg-surface-container-low rounded-lg relative overflow-hidden flex flex-col h-full hover:border-surface-variant transition-colors group">
+<span class="absolute -bottom-4 -right-2 text-[120px] font-black text-surface-variant opacity-30 leading-none z-0 group-hover:text-surface-dim transition-colors duration-500">04</span>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-primary text-3xl mb-6">explore</span>
+<h3 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest mb-4">Site Investigation</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Quickly characterise prospective wind farm locations.</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Professional Vertical Profiling LiDAR Section -->
+<section class="py-20 bg-surface-container-low border-t border-surface-variant dark:border-outline-variant">
+<div class="max-w-container-max mx-auto px-margin-desktop">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter items-center">
+<div class="flex flex-col gap-6 lg:pr-12">
+<div class="flex items-center gap-4 mb-2">
+<div class="h-[1px] w-8 bg-tertiary"></div>
+<span class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Technology</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-background">Professional vertical profiling LiDAR</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                    Our campaigns use industry-proven Doppler LiDAR technology capable of measuring the wind profile across modern turbine rotor heights.
+                </p>
+<a class="font-label-caps text-label-caps text-primary uppercase tracking-widest flex items-center gap-2 mt-4 hover:underline group" href="#">
+                    Explore the technology
+                    <span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</a>
+</div>
+<div class="mt-12 lg:mt-0 relative h-64 lg:h-96 border border-surface-variant bg-background flex items-center justify-center p-8">
+<!-- Decorative Elements for Technical Feel -->
+<div class="absolute top-4 left-4 w-2 h-2 border-t border-l border-tertiary"></div>
+<div class="absolute top-4 right-4 w-2 h-2 border-t border-r border-tertiary"></div>
+<div class="absolute bottom-4 left-4 w-2 h-2 border-b border-l border-tertiary"></div>
+<div class="absolute bottom-4 right-4 w-2 h-2 border-b border-r border-tertiary"></div>
+<div class="text-center opacity-50">
+<span class="material-symbols-outlined text-5xl text-tertiary mb-2">radar</span>
+<p class="font-label-caps text-label-caps text-tertiary uppercase tracking-widest">Vertical Wind Profiling System</p>
+</div>
+</div>
+</div>
+</div>
+</section><section class="py-20 bg-background border-t border-surface-variant">
+<div class="max-w-container-max mx-auto px-margin-desktop">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter items-center">
+<!-- Left Side: Text Content -->
+<div class="lg:col-span-5 flex flex-col gap-6">
+<div class="flex items-center gap-4 mb-2">
+<div class="h-[1px] w-8 bg-primary"></div>
+<span class="font-label-caps text-label-caps text-primary uppercase tracking-widest">Sample Campaign Report</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-background">Și pe homepage arătăm o bucată reală.</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+          Our reporting provides full transparency into campaign performance, ensuring every data point is verified and traceable to international standards.
+        </p>
+<ul class="flex flex-col gap-3 mt-2">
+<li class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-sm">analytics</span>
+<span class="font-body-md text-on-background">Monthly statistics</span>
+</li>
+<li class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-sm">settings_input_component</span>
+<span class="font-body-md text-on-background">Equipment status</span>
+</li>
+<li class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary text-sm">fact_check</span>
+<span class="font-body-md text-on-background">QC observations</span>
+</li>
+</ul>
+<div class="mt-4">
+<button class="font-label-caps text-label-caps uppercase px-8 py-4 bg-primary-container text-on-primary-container hover:bg-surface-tint transition-colors flex items-center justify-center">
+            View Sample Campaign Report
+          </button>
+</div>
+</div>
+<!-- Right Side: Technical Report Card -->
+<div class="lg:col-span-7 mt-12 lg:mt-0">
+<div class="border border-[#D1D0C5] bg-white p-8 rounded-lg shadow-sm relative overflow-hidden">
+<div class="flex justify-between items-start mb-8 border-b border-surface-variant pb-4">
+<div>
+<h4 class="font-label-caps text-label-caps text-on-background font-bold">WindVerity</h4>
+<p class="font-caption text-caption text-secondary uppercase">Campaign Status Report</p>
+</div>
+<div class="text-right">
+<p class="font-caption text-caption text-secondary uppercase">Availability</p>
+<p class="font-headline-lg text-headline-lg text-primary font-black">98.7%</p>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+<!-- Wind Rose Placeholder -->
+<div class="relative aspect-square flex items-center justify-center border border-surface-variant rounded-full p-4">
+<div class="absolute inset-0 flex items-center justify-center opacity-10">
+<div class="w-full h-[1px] bg-on-background"></div>
+<div class="h-full w-[1px] bg-on-background absolute"></div>
+</div>
+<div class="relative w-full h-full border-2 border-primary rounded-full flex items-center justify-center">
+<div class="w-3/4 h-3/4 border border-surface-variant rounded-full"></div>
+<div class="w-1/2 h-1/2 border border-surface-variant rounded-full"></div>
+<!-- Directional Indicators -->
+<span class="absolute top-1 font-label-caps text-[10px]">N</span>
+<span class="absolute right-1 font-label-caps text-[10px]">E</span>
+<span class="absolute bottom-1 font-label-caps text-[10px]">S</span>
+<span class="absolute left-1 font-label-caps text-[10px]">W</span>
+<!-- Data Shape -->
+<svg class="absolute inset-0 w-full h-full text-primary opacity-20" viewBox="0 0 100 100">
+<polygon fill="currentColor" points="50,10 70,30 85,50 70,70 50,90 30,70 15,50 30,30"></polygon>
+</svg>
+</div>
+<div class="absolute bottom-[-20px] text-center">
+<p class="font-label-caps text-[10px] text-secondary uppercase">Wind Rose Analysis</p>
+</div>
+</div>
+<!-- Secondary Metrics -->
+<div class="flex flex-col gap-4">
+<div class="p-4 bg-surface-container-low rounded">
+<p class="font-label-caps text-[10px] text-secondary uppercase mb-1">Mean Wind Speed</p>
+<p class="font-data-lg text-data-lg text-on-background">8.42 m/s</p>
+</div>
+<div class="p-4 bg-surface-container-low rounded">
+<p class="font-label-caps text-[10px] text-secondary uppercase mb-1">Turbulence Intensity</p>
+<p class="font-data-lg text-data-lg text-on-background">0.124</p>
+</div>
+<div class="p-4 bg-surface-container-low rounded">
+<p class="font-label-caps text-[10px] text-secondary uppercase mb-1">TI Class</p>
+<p class="font-data-lg text-data-lg text-on-background">IEC Class A</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Contact Form Section -->
+<section class="py-20 bg-background border-t border-surface-variant">
+<div class="max-w-container-max mx-auto px-margin-desktop flex flex-col items-center text-center">
+<h2 class="font-headline-lg text-headline-lg text-on-background mb-4">Tell us about your project.</h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl mb-12">
+            Send us the location and expected campaign start. We'll take it from there.
+        </p>
+<form class="w-full max-w-2xl flex flex-col gap-8 text-left">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-widest" for="name">Name</label>
+<input class="w-full border-0 border-b border-surface-variant bg-transparent px-0 py-2 text-on-background focus:ring-0 focus:border-primary transition-colors font-body-md placeholder:text-surface-dim" id="name" required="" type="text">
+</div>
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-widest" for="email">Work Email</label>
+<input class="w-full border-0 border-b border-surface-variant bg-transparent px-0 py-2 text-on-background focus:ring-0 focus:border-primary transition-colors font-body-md placeholder:text-surface-dim" id="email" required="" type="email">
+</div>
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-widest" for="location">Project Location</label>
+<input class="w-full border-0 border-b border-surface-variant bg-transparent px-0 py-2 text-on-background focus:ring-0 focus:border-primary transition-colors font-body-md placeholder:text-surface-dim" id="location" required="" type="text">
+</div>
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-widest" for="start">Expected Start</label>
+<input class="w-full border-0 border-b border-surface-variant bg-transparent px-0 py-2 text-on-background focus:ring-0 focus:border-primary transition-colors font-body-md placeholder:text-surface-dim" id="start" required="" type="text">
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<label class="font-label-caps text-label-caps text-secondary uppercase tracking-widest" for="message">Anything Else? (Optional)</label>
+<textarea class="w-full border-0 border-b border-surface-variant bg-transparent px-0 py-2 text-on-background focus:ring-0 focus:border-primary transition-colors font-body-md placeholder:text-surface-dim resize-none" id="message" rows="3"></textarea>
+</div>
+<div class="flex justify-center mt-4">
+<button class="font-label-caps text-label-caps uppercase px-12 py-4 bg-primary-container text-on-primary-container hover:bg-surface-tint transition-colors w-full md:w-auto text-center" type="submit">
+                    Request a Campaign
+                </button>
+</div>
+</form>
+</div>
+</section>
+<!-- Footer -->
+<footer class="w-full bg-surface-container-low dark:bg-surface-container-lowest border-t border-surface-variant dark:border-outline-variant mt-auto">
+  <div class="max-w-container-max mx-auto px-margin-desktop py-20">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-gutter">
+      <!-- Brand Column -->
+      <div class="md:col-span-5 flex flex-col gap-6">
+        <div class="flex flex-col gap-4">
+          <a class="font-headline-lg text-headline-lg font-black tracking-tighter text-on-background" href="#">WindVerity</a>
+          <p class="font-body-md text-body-md text-on-surface-variant max-w-xs">
+            Wind measurement campaigns for onshore wind projects. Delivering bankable data through technical excellence.
+          </p>
+        </div>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-2 text-on-surface-variant">
+            <span class="material-symbols-outlined text-sm">location_on</span>
+            <span class="font-caption text-caption">Bucharest, Romania</span>
+          </div>
+          <div class="flex items-center gap-2 text-on-surface-variant">
+            <span class="material-symbols-outlined text-sm">mail</span>
+            <a href="mailto:contact@windverity.com" class="font-caption text-caption hover:text-primary transition-colors">contact@windverity.com</a>
+          </div>
+          <div class="flex items-center gap-2 text-on-surface-variant">
+            <span class="material-symbols-outlined text-sm">call</span>
+            <span class="font-caption text-caption">+40 722 000 000</span>
+          </div>
+        </div>
+        <div class="flex gap-4 mt-2">
+          <a href="#" class="w-8 h-8 rounded border border-surface-variant flex items-center justify-center text-secondary hover:text-primary hover:border-primary transition-all">
+            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"></path></svg>
+          </a>
+        </div>
+      </div>
+
+      <!-- Navigation Column -->
+      <div class="md:col-span-3 flex flex-col gap-6">
+        <h4 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Company</h4>
+        <nav class="flex flex-col gap-4">
+          <a href="#" class="font-body-md text-body-md text-on-surface-variant hover:text-primary transition-colors">LiDAR Campaigns</a>
+          <a href="#" class="font-body-md text-body-md text-on-surface-variant hover:text-primary transition-colors">Data Quality</a>
+          <a href="#" class="font-body-md text-body-md text-on-surface-variant hover:text-primary transition-colors">Technology</a>
+          <a href="#" class="font-body-md text-body-md text-on-surface-variant hover:text-primary transition-colors">About</a>
+        </nav>
+      </div>
+
+      <!-- Legal Column -->
+      <div class="md:col-span-4 flex flex-col gap-6">
+        <h4 class="font-label-caps text-label-caps text-secondary uppercase tracking-widest">Legal Information</h4>
+        <div class="flex flex-col gap-2">
+          <p class="font-caption text-caption text-on-surface-variant">WindVerity Technical Services S.R.L.</p>
+          <p class="font-caption text-caption text-on-surface-variant">Reg. No: J40/12345/2024</p>
+          <p class="font-caption text-caption text-on-surface-variant">VAT: RO123456789</p>
+        </div>
+        <div class="mt-auto pt-8 border-t border-surface-variant flex gap-6">
+          <a href="#" class="font-caption text-caption text-on-surface-variant hover:text-primary underline">Terms</a>
+          <a href="#" class="font-caption text-caption text-on-surface-variant hover:text-primary underline">Privacy</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Bar -->
+    <div class="mt-20 pt-8 border-t border-surface-variant flex flex-col md:flex-row justify-between items-center gap-4">
+      <p class="font-caption text-caption text-secondary">© 2024 WindVerity Technical Services. All rights reserved.</p>
+      <div class="flex gap-6">
+        <span class="font-caption text-caption text-secondary">Aero-Technical Precision Design System</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+</body></html>

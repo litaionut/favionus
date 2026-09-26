@@ -1,0 +1,49 @@
+/* Skin: Vane — grey felt / red grid / Inter
+   Edit this file to change the Vane look. */
+
+:root {
+	--wd-background: #f4f4f4;
+	--wd-surface: #f4f4f4;
+	--wd-surface-bright: #f4f4f4;
+	--wd-surface-container-lowest: transparent;
+	--wd-surface-container-low: transparent;
+	--wd-surface-container: transparent;
+	--wd-surface-container-high: transparent;
+	--wd-surface-container-highest: transparent;
+	--wd-surface-dim: #e6e6e6;
+	--wd-surface-variant: #d63d3d;
+	--wd-on-background: #1a1a1a;
+	--wd-on-surface: #1a1a1a;
+	--wd-on-surface-variant: #333333;
+	--wd-primary: #d63d3d;
+	--wd-primary-container: #d63d3d;
+	--wd-on-primary: #ffffff;
+	--wd-on-primary-container: #ffffff;
+	--wd-surface-tint: #b83232;
+	--wd-secondary: #666666;
+	--wd-tertiary: #d63d3d;
+	--wd-outline: #d63d3d;
+	--wd-outline-variant: #d63d3d;
+	--wd-error: #d63d3d;
+	--wd-on-error: #ffffff;
+	--wd-error-container: #f7d4d4;
+	--wd-on-error-container: #7a1c1c;
+	--wd-schematic-border: #d63d3d;
+	--wd-kicker-line: #d63d3d;
+	--wd-texture: url("../images/felt.png");
+	--wd-radius: 0;
+	--wd-radius-lg: 0;
+	--font-sans: "Inter", system-ui, sans-serif;
+	--font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+	--font-label: var(--font-sans);
+	--wd-label-color: var(--wd-primary);
+	--wd-kicker-color: var(--wd-primary);
+	--wd-headline-xl-weight: 600;
+	--wd-ghost-color: var(--wd-primary);
+	--wd-ghost-border: var(--wd-primary);
+	--wd-ghost-hover-bg: var(--wd-primary);
+	--wd-ghost-hover-color: var(--wd-on-primary);
+	--wd-card-bg: transparent;
+	--wd-card-shadow: none;
+	--wd-inner-bg: transparent;
+}

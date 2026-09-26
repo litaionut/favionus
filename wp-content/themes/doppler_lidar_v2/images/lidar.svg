@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" role="img" aria-labelledby="lidarTitle">
+  <title id="lidarTitle">Vertical profiling LiDAR unit</title>
+  <rect width="480" height="480" fill="#f4f4f4"/>
+  <circle cx="240" cy="240" r="170" fill="none" stroke="#d63d3d"/>
+  <circle cx="240" cy="240" r="120" fill="none" stroke="#d63d3d"/>
+  <circle cx="240" cy="240" r="70" fill="none" stroke="#d63d3d"/>
+  <line x1="240" y1="240" x2="360" y2="330" stroke="#d63d3d" stroke-width="1"/>
+  <circle cx="240" cy="240" r="3" fill="#d63d3d"/>
+  <circle cx="300" cy="200" r="2" fill="#d63d3d"/>
+  <circle cx="210" cy="280" r="2" fill="#d63d3d"/>
+  <circle cx="190" cy="190" r="2" fill="#d63d3d"/>
+  <text x="240" y="430" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="12" font-weight="500" letter-spacing="1.6" fill="#d63d3d">VERTICAL PROFILING LIDAR</text>
+</svg>

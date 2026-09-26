@@ -1,0 +1,2581 @@
+#!/bin/bash
+
+# =========================
+#  WP Staging Management Script
+# =========================
+
+set -e
+
+# --- Usage/Help ---
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+  echo "Usage: $0 <command> <auth_token> <production_dir> <staging_dir> <production_url> <staging_url> <user_id> <plugin_id> [function_param]"
+  echo "Commands: create, clone, deploy_files, deploy_db, deploy_files_db, destroy, ..."
+  exit 0
+fi
+
+# --- Parse parameters and set globals early (needed for logging path) ---
+export PATH=/usr/local/bin:$PATH
+
+# --- WP-CLI wrapper: skip the object-cache drop-in for the duration of staging operations ---
+#
+# WordPress loads wp-content/object-cache.php on every WP-CLI bootstrap, and it is NOT skipped by
+# --skip-plugins/--skip-themes. When that drop-in's backend is unreachable -- daemon down, rotated
+# credentials, or a foreign drop-in migrated in from another host -- it can print warnings or die
+# outright. Either way the JSON this script returns to the module is lost and create/clone/deploy
+# fail with a generic error even though staging itself is fine (RCA: INC1596374).
+#
+# Two mechanisms, because neither covers everything on its own:
+#   1. enable_loading_object_cache_dropin (WP 5.8+) is core's own switch for exactly this, and it
+#      works for ANY drop-in, not just Redis ones. WP_CLI::add_wp_hook registers it before WP boots.
+#   2. WP_REDIS_DISABLED covers the case where advanced-cache.php pulled the drop-in in before
+#      wp_start_object_cache() got to run the filter.
+#
+# The filter returns false only when the drop-in is not already in memory. Returning a flat false
+# is not safe: when advanced-cache.php has already required object-cache.php (Batcache does this),
+# core skips the branch that would call wp_using_ext_object_cache( true ), then requires
+# wp-includes/cache.php, which redeclares the 21 wp_cache_* functions the drop-in just defined and
+# fatals every command this script runs. Reporting the drop-in as loaded lets core take that branch
+# and leaves mechanism 2 to neutralize it.
+#
+# IMPORTANT: this makes wp_using_ext_object_cache() false inside these subprocesses while it stays
+# true for the site's web requests. Anything this script shares with PHP must therefore live
+# somewhere that does not move with the cache. Options are database backed and safe. Transients are
+# NOT: they follow the object cache, so a value written by PHP would be invisible here. That is why
+# auth_action() below reads an option rather than a transient.
+NFD_WP_EXEC="defined('WP_REDIS_DISABLED') || define('WP_REDIS_DISABLED', true);"
+NFD_WP_EXEC="${NFD_WP_EXEC} if ( class_exists('WP_CLI') && method_exists('WP_CLI', 'add_wp_hook') ) { WP_CLI::add_wp_hook('enable_loading_object_cache_dropin', function () { return function_exists('wp_cache_init'); }); }"
+
+wp() {
+  command wp --exec="$NFD_WP_EXEC" "$@"
+}
+
+PRODUCTION_DIR=$3
+STAGING_DIR=$4
+PRODUCTION_URL=$5
+STAGING_URL=$6
+USER_ID=$7
+PLUGIN_ID=$8
+PLUGIN_SLUG=$9
+PLUGIN_NAME="${10}"
+DB_HOST=$(wp eval 'echo DB_HOST;' --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet)
+DB_NAME=$(wp eval 'echo DB_NAME;' --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet)
+DB_USER=$(wp eval 'echo DB_USER;' --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet)
+DB_PASS=$(wp eval 'echo DB_PASSWORD;' --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet)
+DB_PREFIX=$(wp eval 'global $wpdb; echo $wpdb->prefix;' --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet)
+STAGING_CONFIG_JSON=$(wp option get staging_config --format=json --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet)
+PRODUCTION_TABLES=$(wp db tables --all-tables-with-prefix --format=csv --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet)
+# LOG_FILE must be set after PRODUCTION_DIR is set
+LOG_FILE="$PRODUCTION_DIR/nfd-private/nfd-staging.log"  # Log file always in production uploads
+CONTENT_DIRS=(uploads themes plugins)
+
+# List of patterns to ignore, example ("htacces." "test "wpform")
+IGNORE_PATTERNS=("htaccess.")
+
+# --- Logging ---
+log() {
+  # log LEVEL STEP MESSAGE
+  local level="$1"; local step="$2"; local msg="$3"
+
+  local log_dir
+  log_dir="$(dirname "$LOG_FILE")"
+
+  # 1. Create folder if not exists
+  if [ ! -d "$log_dir" ]; then
+    mkdir -p "$log_dir"
+  fi
+
+  # 2. Create .htaccess if not exists
+  local htaccess_file="$log_dir/.htaccess"
+
+  if [ ! -f "$htaccess_file" ]; then
+    echo "Order allow,deny"        > "$htaccess_file"
+    echo "Deny from all"          >> "$htaccess_file"
+  fi
+
+  # 3. Create file if log not exists
+  if [ ! -f "$LOG_FILE" ]; then
+    touch "$LOG_FILE"
+  fi
+
+  # 4. Write in log (never stdout)
+  echo "$(date -u '+%Y-%m-%d %H:%M:%S') [$level] [$step] $msg" >> "$LOG_FILE"
+}
+
+# Prefer utf8mb4 for 4-byte characters; fall back to utf8 on older servers.
+resolve_db_charset() {
+  local wp_path="$1"
+
+  if [ -n "${DB_CHARSET:-}" ]; then
+    log "DEBUG" "charset" "Using DB_CHARSET=$DB_CHARSET (from environment) for $wp_path"
+    echo "$DB_CHARSET"
+    return
+  fi
+
+  local charset=utf8mb4
+  local charset_name
+  charset_name=$(wp db query "SHOW CHARACTER SET LIKE 'utf8mb4';" --skip-column-names --path="$wp_path" --skip-themes --skip-plugins --quiet 2>/dev/null | awk 'NR==1 {print $1}')
+  if [ "$charset_name" != "utf8mb4" ]; then
+    charset=utf8
+    log "DEBUG" "charset" "utf8mb4 unavailable at $wp_path; using utf8"
+  else
+    log "DEBUG" "charset" "Using utf8mb4 at $wp_path"
+  fi
+  echo "$charset"
+}
+
+# --- Staging lock (WordPress transient) ---
+release_staging_lock() {
+  wp transient delete nfd_staging_lock --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet || true
+}
+
+# --- Async deploy result ---
+#
+# Staging::getDeployCommandStatus() polls nfd-staging-deploy-result.json for the outcome of a
+# deploy. The PHP request that started this script blocks in exec() for the whole run, so PHP-FPM
+# can terminate that worker on its request timeout while this script carries on to completion. The
+# caller therefore cannot be the only writer of the terminal status, or a finished deploy is left
+# reported as still running with nobody alive to correct it.
+#
+# NFD_DEPLOY_COMMAND and NFD_DEPLOY_STARTED_AT are exported only by Staging::startAsyncDeploy().
+# Both being unset for every other command, and for anyone running this script by hand, is what
+# keeps this from publishing a result over a job it does not own.
+write_deploy_result() {
+  local status="$1"
+  local message="$2"
+  local for_command="${3:-}"
+
+  [ -n "${NFD_DEPLOY_COMMAND:-}" ] && [ -n "${NFD_DEPLOY_STARTED_AT:-}" ] || return 0
+
+  # deploy_files_db reaches its own end through deploy_files and deploy_db, so those two successes
+  # must not be published as the run's result. Failures pass no command: a failure anywhere is the
+  # failure of the whole run.
+  [ -z "$for_command" ] || [ "$for_command" = "$NFD_DEPLOY_COMMAND" ] || return 0
+
+  local result_dir="$PRODUCTION_DIR/nfd-private"
+  mkdir -p "$result_dir" 2>/dev/null || return 0
+
+  printf '{"status":"%s","command":"%s","started_at":%s,"message":"%s"}' \
+    "$status" "$NFD_DEPLOY_COMMAND" "$NFD_DEPLOY_STARTED_AT" "$message" \
+    > "$result_dir/nfd-staging-deploy-result.json" 2>/dev/null || true
+}
+
+# --- Error Handling ---
+#
+# The JSON goes out first: it is the only thing the PHP side can read, and logging is best effort
+# (the log directory may not be creatable). `|| true` keeps a failing log() from taking the script
+# down under set -e after the response has already been printed.
+#
+# Optional $2 is a diagnostic step (e.g. auth_action:token_missing). operation_failed is the marker
+# PHP uses to distinguish a real failure from stderr that was logged as [ERROR].
+error() {
+  printf '{"status":"error","message":"%s"}\n' "$1"
+  [ -n "${2:-}" ] && log "ERROR" "$2" "$1" || true
+  log "ERROR" "operation_failed" "$1" || true
+  write_deploy_result "error" "$1" || true
+  release_staging_lock
+  exit 1
+}
+
+run_or_fail() {
+  local step="$1"; shift
+  local errmsg="$1"; shift
+  local TMP_ERR=$(mktemp)
+  log "DEBUG" "$step" "PATH: $PATH"
+  log "DEBUG" "$step" "Permissions dir: $(ls -ld $(dirname "$TMP_ERR"))"
+  log "DEBUG" "$step" "Before of $*"
+  set +e
+  "$@" > "$TMP_ERR" 2>&1
+  local status=$?
+  set -e
+  log "DEBUG" "$step" "After $*, exit code: $status"
+  if [ -s "$TMP_ERR" ]; then
+    while IFS= read -r line; do
+      log "ERROR" "$step" "$line"
+    done < "$TMP_ERR"
+  fi
+  rm -f "$TMP_ERR"
+  if [ $status -ne 0 ]; then
+    log "ERROR" "$step" "$errmsg"
+    error "$errmsg"
+  fi
+}
+
+# Normalize foreign-key constraint names in a SQL dump file.
+# MySQL limits identifiers to 64 characters and requires schema-wide FK name uniqueness.
+# Prefix rewrites during staging create/clone/deploy can produce names that exceed the
+# limit or collide after truncation; this step truncates long names and appends _1, _2,
+# ... suffixes for any collisions (case-insensitive, scoped to the file being processed).
+# An optional name prefix (e.g. staging_ or prod_) avoids collisions with FK names already
+# present in the target schema when production and staging tables share one database.
+# Only FOREIGN KEY constraints are rewritten; UNIQUE/PRIMARY/CHECK symbols are left alone.
+# Args: $1 = SQL file path, $2 = log step label, $3 = optional FK name prefix (default none).
+# Returns 0 on success, 1 on failure.
+normalize_fk_names() {
+  local sql_file="$1"
+  local log_step="$2"
+  local name_prefix="${3:-}"
+  local tmp_err
+  tmp_err=$(mktemp)
+
+  set +e
+  NFD_FK_PREFIX="$name_prefix" perl -i -pe '
+    BEGIN {
+      our %seen = ();
+      our $prefix = $ENV{NFD_FK_PREFIX} // "";
+      our $max_len = 64;
+    }
+    s/\bCONSTRAINT\s+(?:`([^`]+)`|([A-Za-z0-9_]+))(?=\s+FOREIGN\s+KEY)/do {
+      my $base = defined $1 ? $1 : $2;
+      if ($prefix ne "" && $base !~ m#^\Q$prefix\E#i) {
+        $base = $prefix . $base;
+      }
+      $base = substr($base, 0, $max_len) if length($base) > $max_len;
+
+      my $name = $base;
+      my $i = 1;
+      while (exists $seen{lc $name}) {
+        my $suffix = "_" . $i;
+        my $max = $max_len - length($suffix);
+        my $stem = $max > 0 ? substr($base, 0, $max) : "";
+        $name = $stem . $suffix;
+        $i++;
+      }
+      $seen{lc $name} = 1;
+      "CONSTRAINT `$name`";
+    }/gei
+  ' "$sql_file" 2>"$tmp_err"
+  local status=$?
+  set -e
+
+  if [ $status -ne 0 ]; then
+    if [ -s "$tmp_err" ]; then
+      while IFS= read -r line; do
+        log "ERROR" "$log_step" "$line"
+      done < "$tmp_err"
+    fi
+    rm -f "$tmp_err"
+    return 1
+  fi
+
+  rm -f "$tmp_err"
+  return 0
+}
+
+rename_prefixed_keys_to_staging() {
+  local wp_path="$1"
+  local log_step="$2"
+  local db_prefix_like
+  local query_output
+  local failed=0
+  local like_escape_suffix=" ESCAPE '\\\\'"
+  local staging_options_table="staging_${DB_PREFIX}options"
+  local staging_usermeta_table="staging_${DB_PREFIX}usermeta"
+  # Escape LIKE wildcards in DB_PREFIX so _ and % match literally in SQL LIKE patterns.
+  db_prefix_like=$(printf '%s' "$DB_PREFIX" | sed 's/[_%]/\\&/g')
+  log "INFO" "$log_step" "Renaming prefix-dependent option names and meta keys to staging prefix"
+  set +e
+  # Remove auto-created staging-prefixed rows when the imported copy still uses production prefix names.
+  query_output=$(wp db query "DELETE o1 FROM \`${staging_options_table}\` o1 INNER JOIN \`${staging_options_table}\` o2 ON o2.option_name = REPLACE(o1.option_name, 'staging_', '') WHERE o1.option_name LIKE 'staging\\_${db_prefix_like}%'${like_escape_suffix} AND o1.option_name != o2.option_name;" \
+    --path="$wp_path" --skip-themes --skip-plugins --quiet 2>&1)
+  local opt_del_status=$?
+  if [ -n "$query_output" ]; then
+    while IFS= read -r line; do [ -n "$line" ] && log "ERROR" "$log_step" "$line"; done <<< "$query_output"
+  fi
+  query_output=$(wp db query "UPDATE \`${staging_options_table}\` SET option_name = CONCAT('staging_', option_name) WHERE option_name LIKE '${db_prefix_like}%'${like_escape_suffix};" \
+    --path="$wp_path" --skip-themes --skip-plugins --quiet 2>&1)
+  local opt_status=$?
+  if [ -n "$query_output" ]; then
+    while IFS= read -r line; do [ -n "$line" ] && log "ERROR" "$log_step" "$line"; done <<< "$query_output"
+  fi
+  local meta_del_status=0
+  local meta_status=0
+  query_output=$(wp db query "SELECT 1 FROM \`${staging_usermeta_table}\` WHERE meta_key LIKE 'staging\\_${db_prefix_like}%'${like_escape_suffix} LIMIT 1;" \
+    --path="$wp_path" --skip-themes --skip-plugins --skip-column-names --quiet 2>&1)
+  local usermeta_staging_check_status=$?
+  if [ $usermeta_staging_check_status -ne 0 ]; then
+    if [ -n "$query_output" ]; then
+      while IFS= read -r line; do [ -n "$line" ] && log "ERROR" "$log_step" "$line"; done <<< "$query_output"
+    fi
+    meta_del_status=$usermeta_staging_check_status
+  elif echo "$query_output" | grep -q '1'; then
+    # Remove auto-created staging-prefixed rows when imported copy still uses production prefix names.
+    query_output=$(wp db query "DELETE m1 FROM \`${staging_usermeta_table}\` m1 INNER JOIN \`${staging_usermeta_table}\` m2 ON m2.user_id = m1.user_id AND m2.meta_key = REPLACE(m1.meta_key, 'staging_', '') WHERE m1.meta_key LIKE 'staging\\_${db_prefix_like}%'${like_escape_suffix} AND m1.meta_key != m2.meta_key;" \
+      --path="$wp_path" --skip-themes --skip-plugins --quiet 2>&1)
+    meta_del_status=$?
+    if [ -n "$query_output" ]; then
+      while IFS= read -r line; do [ -n "$line" ] && log "ERROR" "$log_step" "$line"; done <<< "$query_output"
+    fi
+  fi
+  query_output=$(wp db query "SELECT 1 FROM \`${staging_usermeta_table}\` WHERE meta_key LIKE '${db_prefix_like}%'${like_escape_suffix} LIMIT 1;" \
+    --path="$wp_path" --skip-themes --skip-plugins --skip-column-names --quiet 2>&1)
+  local usermeta_rename_check_status=$?
+  if [ $usermeta_rename_check_status -ne 0 ]; then
+    if [ -n "$query_output" ]; then
+      while IFS= read -r line; do [ -n "$line" ] && log "ERROR" "$log_step" "$line"; done <<< "$query_output"
+    fi
+    meta_status=$usermeta_rename_check_status
+  elif echo "$query_output" | grep -q '1'; then
+    query_output=$(wp db query "UPDATE \`${staging_usermeta_table}\` SET meta_key = CONCAT('staging_', meta_key) WHERE meta_key LIKE '${db_prefix_like}%'${like_escape_suffix};" \
+      --path="$wp_path" --skip-themes --skip-plugins --quiet 2>&1)
+    meta_status=$?
+    if [ -n "$query_output" ]; then
+      while IFS= read -r line; do [ -n "$line" ] && log "ERROR" "$log_step" "$line"; done <<< "$query_output"
+    fi
+  fi
+  set -e
+  if [ $opt_del_status -ne 0 ] || [ $opt_status -ne 0 ]; then
+    log "ERROR" "$log_step" "Failed to rename prefixed option names (del=$opt_del_status, rename=$opt_status)"
+    failed=1
+  fi
+  if [ $meta_del_status -ne 0 ] || [ $meta_status -ne 0 ]; then
+    log "ERROR" "$log_step" "Failed to rename prefixed meta keys (del=$meta_del_status, rename=$meta_status)"
+    failed=1
+  fi
+  return $failed
+}
+
+rename_prefixed_keys_to_production() {
+  local wp_path="$1"
+  local log_step="$2"
+  log "INFO" "$log_step" "Cleaning staging-prefixed option names and meta keys for production"
+  set +e
+
+  # Options: drop staging-prefixed rows where the un-prefixed version already exists
+  wp db query "DELETE o1 FROM \`${DB_PREFIX}options\` o1 INNER JOIN \`${DB_PREFIX}options\` o2 ON o2.option_name = REPLACE(o1.option_name, 'staging_', '') WHERE o1.option_name LIKE 'staging\_${DB_PREFIX}%' AND o1.option_name != o2.option_name;" \
+    --path="$wp_path" --skip-themes --skip-plugins --quiet 2>/dev/null
+  local opt_del_status=$?
+
+  # Options: rename remaining staging-prefixed rows (no conflict)
+  wp db query "UPDATE \`${DB_PREFIX}options\` SET option_name = REPLACE(option_name, 'staging_', '') WHERE option_name LIKE 'staging\_${DB_PREFIX}%';" \
+    --path="$wp_path" --skip-themes --skip-plugins --quiet 2>/dev/null
+  local opt_status=$?
+
+  # Usermeta: drop staging-prefixed rows where the un-prefixed version exists for the same user
+  wp db query "DELETE m1 FROM \`${DB_PREFIX}usermeta\` m1 INNER JOIN \`${DB_PREFIX}usermeta\` m2 ON m2.user_id = m1.user_id AND m2.meta_key = REPLACE(m1.meta_key, 'staging_', '') WHERE m1.meta_key LIKE 'staging\_${DB_PREFIX}%' AND m1.meta_key != m2.meta_key;" \
+    --path="$wp_path" --skip-themes --skip-plugins --quiet 2>/dev/null
+  local meta_del_status=$?
+
+  # Usermeta: rename remaining staging-prefixed rows (no conflict)
+  wp db query "UPDATE \`${DB_PREFIX}usermeta\` SET meta_key = REPLACE(meta_key, 'staging_', '') WHERE meta_key LIKE 'staging\_${DB_PREFIX}%';" \
+    --path="$wp_path" --skip-themes --skip-plugins --quiet 2>/dev/null
+  local meta_status=$?
+
+  set -e
+  if [ $opt_del_status -ne 0 ] || [ $opt_status -ne 0 ]; then
+    log "ERROR" "$log_step" "Failed to clean prefixed option names (del=$opt_del_status, rename=$opt_status)"
+  fi
+  if [ $meta_del_status -ne 0 ] || [ $meta_status -ne 0 ]; then
+    log "ERROR" "$log_step" "Failed to clean prefixed meta keys (del=$meta_del_status, rename=$meta_status)"
+  fi
+}
+
+# --- Resync cached options on the live site ---
+#
+# Everything above ran with the object-cache drop-in skipped, so option writes landed in the
+# database without evicting the copies a live persistent cache is still serving. That is not just
+# stale reads: update_option() on the PHP side reads the cached value, decides the row still
+# exists, issues an UPDATE that matches nothing, and drops the write. The option then cannot be
+# changed at all until the key is evicted.
+#
+# Staging::runCommand() does this too, but only for the install it runs in. A deploy is driven from
+# the staging site, and the drop-in namespaces keys by table prefix, so this copy is what covers
+# production's keys on that path. It is also what covers support running the script by hand.
+#
+# Deliberately `command wp`, not the wrapper, so the drop-in IS loaded and the real backend gets
+# the delete. A broken drop-in makes it a no-op, and it must never fail the run.
+resync_cached_options() {
+  [ -n "${PRODUCTION_DIR:-}" ] || return 0
+  # One bootstrap, not one per key: this runs on every exit path, including compat_check.
+  command wp eval 'foreach ( array( "staging_auth_token", "staging_config", "staging_environment", "nfd_coming_soon", "alloptions", "notoptions" ) as $k ) { wp_cache_delete( $k, "options" ); }' \
+    --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet >/dev/null 2>&1 || true
+}
+
+# --- Cleanup on exit ---
+#
+# Runs under `set -e`, and its exit status becomes the script's, which Staging::runCommand() now
+# treats as authoritative. Every command in here must therefore end in `|| true` or be otherwise
+# incapable of returning non-zero, or a successful run gets reported to the user as a failure.
+cleanup() {
+  release_staging_lock
+  resync_cached_options
+}
+trap cleanup EXIT
+
+# --- Utility: Move/copy content dirs robustly ---
+move_content_dirs() {
+  local FROM="$1"; local TO="$2"; local ON_ERROR="$3"
+  log "INFO" "move_content_dirs" "START: Moving content dirs from $FROM to $TO"
+  for DIR in uploads themes plugins; do
+    local SRC="$FROM/wp-content/$DIR"
+    local DEST="$TO/wp-content/$DIR"
+    log "INFO" "move_content_dirs:$DIR" "Clean destination dir: removing $DEST"
+    rm -rf "$DEST" || { log "ERROR" "move_content_dirs:$DIR" "Unable to remove $DEST"; [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Unable to remove $DIR directory."; }
+    log "INFO" "move_content_dirs:$DIR" "Create destination: $DEST"
+    mkdir -p "$DEST" || { log "ERROR" "move_content_dirs:$DIR" "Unable to create $DEST"; [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Unable to create $DIR folder."; }
+    if [ -d "$SRC" ] && [ "$(ls -A "$SRC" 2>/dev/null)" ]; then
+      log "INFO" "move_content_dirs:$DIR" "Attempting rsync from $SRC/ to $DEST"
+      log "DEBUG" "move_content_dirs:$DIR" "Command: rsync -r --exclude=.git $SRC/ $DEST"
+      set +e
+      RSYNC_OUTPUT=$(rsync -r --exclude=.git "$SRC/" "$DEST" 2>&1)
+      RSYNC_EXIT=$?
+      set -e
+      log "DEBUG" "move_content_dirs:$DIR" "rsync exit code: $RSYNC_EXIT"
+      if [ -n "$RSYNC_OUTPUT" ]; then
+        log "ERROR" "move_content_dirs:$DIR" "Output rsync:"
+        while IFS= read -r line; do log "ERROR" "move_content_dirs:$DIR" "RSYNC: $line"; done <<< "$RSYNC_OUTPUT"
+      fi
+      if [ $RSYNC_EXIT -ne 0 ]; then
+        PERM_DENIED_FILE=$(echo "$RSYNC_OUTPUT" | grep "Permission denied" | awk -F'open "' '{print $2}' | awk -F'"' '{print $1}' | head -n1)
+        if [ -n "$PERM_DENIED_FILE" ]; then
+          log "ERROR" "move_content_dirs:$DIR" "Permission denied on file: $PERM_DENIED_FILE"
+          SKIP_ERROR=0
+          for PATTERN in "${IGNORE_PATTERNS[@]}"; do
+            if [[ "$PERM_DENIED_FILE" == *"$PATTERN"* ]]; then
+              SKIP_ERROR=1
+              break
+            fi
+          done
+
+          if [ $SKIP_ERROR -eq 1 ]; then
+            log "INFO" "move_content_dirs:$DIR" "Ignored permission denied on $PERM_DENIED_FILE (matched ignore pattern)"
+          else
+            [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Permission denied on file: $PERM_DENIED_FILE"
+          fi
+        else
+          [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Unable to move $DIR folder (rsync failed)."
+        fi
+      fi
+      log "INFO" "move_content_dirs:$DIR" "Rsync completed with success."
+    else
+      log "INFO" "move_files:$DIR" "No files to copy in $DIR, skipping rsync."
+    fi
+  done
+  log "INFO" "move_content_dirs" "END: Finished moving content dirs from $FROM to $TO"
+}
+
+# --- Utility: Sync wp-includes/php-ai-client from source to destination ---
+# WordPress 7.0+ bundles the PHP AI Client SDK here. A fresh `wp core download` on
+# staging can leave this directory out of sync with production when AI connectors
+# (OpenAI, Gemini, etc.) are installed, breaking site switching.
+sync_php_ai_client() {
+  local FROM="$1"; local TO="$2"; local ON_ERROR="$3"
+  local SRC="$FROM/wp-includes/php-ai-client"
+  local DEST="$TO/wp-includes/php-ai-client"
+
+  if [ ! -d "$SRC" ]; then
+    log "INFO" "sync_php_ai_client" "No php-ai-client at $SRC, skipping."
+    return 0
+  fi
+
+  log "INFO" "sync_php_ai_client" "START: Syncing php-ai-client from $SRC to $DEST"
+  log "INFO" "sync_php_ai_client" "Removing existing destination: $DEST"
+  rm -rf "$DEST" || { log "ERROR" "sync_php_ai_client" "Unable to remove $DEST"; [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Unable to remove php-ai-client directory."; }
+
+  log "INFO" "sync_php_ai_client" "Creating destination parent: $(dirname "$DEST")"
+  mkdir -p "$(dirname "$DEST")" || { log "ERROR" "sync_php_ai_client" "Unable to create $(dirname "$DEST")"; [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Unable to create php-ai-client parent directory."; }
+
+  if [ "$(ls -A "$SRC" 2>/dev/null)" ]; then
+    log "INFO" "sync_php_ai_client" "Copying from $SRC/ to $DEST"
+    set +e
+    RSYNC_OUTPUT=$(rsync -r "$SRC/" "$DEST" 2>&1)
+    RSYNC_EXIT=$?
+    set -e
+    log "DEBUG" "sync_php_ai_client" "rsync exit code: $RSYNC_EXIT"
+    if [ -n "$RSYNC_OUTPUT" ]; then
+      while IFS= read -r line; do log "ERROR" "sync_php_ai_client" "RSYNC: $line"; done <<< "$RSYNC_OUTPUT"
+    fi
+    if [ $RSYNC_EXIT -ne 0 ]; then
+      [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Unable to sync php-ai-client directory."
+    fi
+    log "INFO" "sync_php_ai_client" "Rsync completed successfully."
+  else
+    log "INFO" "sync_php_ai_client" "Source directory is empty, skipping rsync."
+  fi
+
+  log "INFO" "sync_php_ai_client" "END: Finished syncing php-ai-client from $FROM to $TO"
+}
+
+# --- Authentication ---
+auth_action() {
+  if [ ! -d "$CURRENT_DIR" ]; then
+    mkdir -p "$CURRENT_DIR" || error 'Unable to create directory.'
+  fi
+  cd "$CURRENT_DIR" || error 'Unable to switch directory.' 'auth_action:cd_failed'
+
+  # CURRENT_DIR decides which install the token is read from, so record it along with the signal it
+  # came from: reading production's token from the staging path (or the reverse) looks identical to
+  # a missing token from the outside.
+  log "INFO" "auth_action" "Reading token from $CURRENT_DIR (NFD_STAGING_ENV=${NFD_STAGING_ENV:-<unset>}, pwd was $(pwd))"
+
+  # Staging::runCommand() stores this as an option in the form "<token>.<expiry epoch>", not as a
+  # transient. Transients follow wp_using_ext_object_cache(), which is true for the web request that
+  # writes the token and false here because the wrapper above skips the drop-in, so a transient
+  # written by PHP would never be found. Options are database backed in both directions. The expiry
+  # rides along in the value because options have no TTL of their own.
+  # stderr is captured rather than discarded: "wp exited non-zero" covers both "the option is not
+  # there" and "WP-CLI could not boot at all" (wrong PHP binary, memory limit, fatal in a drop-in),
+  # and those two need completely different fixes. `set +e` because `set -e` would otherwise kill
+  # the script here with no JSON on stdout at all.
+  local AUTH_ERR_FILE
+  AUTH_ERR_FILE=$(mktemp)
+  set +e
+  STORED_RAW=$(wp option get staging_auth_token --path="$CURRENT_DIR" --skip-themes --skip-plugins --quiet 2>"$AUTH_ERR_FILE")
+  AUTH_GET_STATUS=$?
+  set -e
+  AUTH_GET_STDERR=$(head -n1 "$AUTH_ERR_FILE" 2>/dev/null || true)
+  rm -f "$AUTH_ERR_FILE"
+
+  # Consume it up front so a single token can never be replayed, whatever the outcome below.
+  wp option delete staging_auth_token --path="$CURRENT_DIR" --skip-themes --skip-plugins --quiet 2>/dev/null || true
+
+  # WP-CLI shares stdout with PHP itself. A notice, deprecation or warning raised while WordPress
+  # boots (WP_DEBUG_DISPLAY on, a noisy mu-plugin, a BOM before wp-config.php's opening tag) is
+  # printed ahead of the option value, and the old ${STORED%%.*} split would then take that text as
+  # the token and fail every handshake. Keep only the line that has the shape runCommand() wrote:
+  # an alphanumeric token, a dot, then an epoch. `|| true` because grep exits 1 on no match.
+  STORED=$(printf '%s\n' "$STORED_RAW" | grep -E '^[A-Za-z0-9]+\.[0-9]+$' | tail -n1 || true)
+  STORED_TOKEN=${STORED%%.*}
+  STORED_EXPIRES=${STORED##*.}
+
+  if [ -z "$STORED_TOKEN" ]; then
+    # Distinguish "nothing was there" from "something was there but was not a token", because the
+    # two have completely different causes: a dropped update_option() versus polluted stdout.
+    if [ -z "$STORED_RAW" ]; then
+      # Which database WP-CLI just looked in. PHP logs the same pair before exec, so a mismatch
+      # here is the answer on its own: the token was written somewhere this read cannot see.
+      # Do not log stderr: WP-CLI can echo option values there when a notice fires during boot.
+      log "ERROR" "auth_action" "wp option get exited $AUTH_GET_STATUS; stderr present: $([ -n "$AUTH_GET_STDERR" ] && echo yes || echo no)"
+      log "ERROR" "auth_action" "WP-CLI database: $(wp eval 'global $wpdb; echo DB_NAME . " prefix=" . $wpdb->prefix;' --path="$CURRENT_DIR" --skip-themes --skip-plugins --quiet 2>/dev/null || echo '<wp eval failed>')"
+      error 'Unable to authenticate the action.' 'auth_action:token_missing'
+    fi
+    # Length only: STORED_RAW is the option value (or a notice glued to it) and must not hit the log.
+    log "ERROR" "auth_action" "Unexpected output before the token (${#STORED_RAW} chars)"
+    error 'Unable to authenticate the action.' 'auth_action:token_unparseable'
+  fi
+
+  if [ "$1" != "$STORED_TOKEN" ]; then
+    error 'Unable to authenticate the action.' 'auth_action:token_mismatch'
+  fi
+
+  # Digits only, and short enough that `[ -le ]` can actually compare it. Without the length
+  # bound a value like 99999999999999999999999999 makes `[` fail with "integer expression
+  # expected" and return 2, which `if` reads as false, and the token would be accepted.
+  case "$STORED_EXPIRES" in
+    ''|*[!0-9]*) error 'Unable to authenticate the action.' 'auth_action:expiry_not_numeric' ;;
+  esac
+  if [ "${#STORED_EXPIRES}" -gt 10 ]; then
+    error 'Unable to authenticate the action.' 'auth_action:expiry_out_of_range'
+  fi
+
+  if [ "$STORED_EXPIRES" -le "$(date +%s)" ]; then
+    error 'Unable to authenticate the action.' 'auth_action:token_expired'
+  fi
+
+  log "SUCCESS" "auth_action" "Authentication successful."
+}
+
+# --- Lock check ---
+lock_check() {
+  local LOCK_DATA=$(wp transient get nfd_staging_lock --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet)
+  local CURRENT_TIME=$(date +%s)
+  local LOCK_TTL=1800
+
+  if [ -n "$LOCK_DATA" ]; then
+    local LOCK_TIMESTAMP=$(echo "$LOCK_DATA" | awk -F':' '{print $2}')
+    if [ -z "$LOCK_TIMESTAMP" ] || [ "$((CURRENT_TIME - LOCK_TIMESTAMP))" -gt "$LOCK_TTL" ]; then
+
+      wp transient delete nfd_staging_lock --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+      log "INFO" "lock_check" "Expired lock removed."
+    else
+      # Lock still valid, block process
+      error 'Staging action is locked by another command.'
+    fi
+  fi
+
+  wp transient set nfd_staging_lock "active:$CURRENT_TIME" "$LOCK_TTL" --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+  log "INFO" "lock_check" "Lock set successfully."
+}
+
+# --- Compatibility check ---
+compatibility_check() {
+  # type -P looks only at the filesystem. `command -v` matches the wp() wrapper defined above, so
+  # this test would always pass once that function exists. Note the check is mostly belt and
+  # braces either way: the wp calls that set DB_HOST and friends run earlier, so a box with no
+  # WP-CLI has already failed under set -e before reaching this point.
+  if ! type -P wp >/dev/null 2>&1; then
+    echo "WP-CLI is not available."
+    exit 1
+  fi
+  if [ "compat_check" == "$1" ]; then
+    # Must be quoted. Unquoted, the shell strips the double quotes and emits {status:success},
+    # which is not valid JSON, so this response never survived json_decode() on the PHP side.
+    echo '{"status":"success"}'
+    exit
+  fi
+}
+
+# --- Rollback/Cleanup for failed staging creation ---
+delete_temp_staging() {
+  local step="${1:-0}"
+  local message="${2:-Cleanup after failure}"
+  step=$((step + 0))
+
+  set +e
+  if [ "$step" -ge 5 ]; then
+    wp option update nfd_coming_soon 'false' --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+    log "INFO" "delete_temp_staging:step5" "Reverted nfd_coming_soon option."
+  fi
+  if [ "$step" -ge 4 ]; then
+    wp option delete staging_config --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+    log "INFO" "delete_temp_staging:step4" "Removed option staging_config."
+  fi
+  if [ "$step" -ge 3 ]; then
+ 	WP_CONFIG="$PRODUCTION_DIR/wp-config.php"
+  	DB_NAME=$(grep DB_NAME "$WP_CONFIG" | cut -d \' -f 4)
+	DB_USER=$(grep DB_USER "$WP_CONFIG" | cut -d \' -f 4)
+	DB_PASS=$(grep DB_PASSWORD "$WP_CONFIG" | cut -d \' -f 4)
+	DB_HOST=$(grep DB_HOST "$WP_CONFIG" | cut -d \' -f 4)
+	TABLE_PREFIX=$(grep '^\$table_prefix' "$WP_CONFIG" | cut -d \' -f 2)
+	mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "SHOW TABLES LIKE 'staging\_%';" | tail -n +2 | xargs -I {} mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "DROP TABLE {};"
+    log "INFO" "delete_temp_staging:step3" "Removed all staging tables."
+  fi
+  if [ "$step" -ge 2 ]; then
+    wp option delete staging_config --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+    wp option delete staging_environment --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+    log "INFO" "delete_temp_staging:step4" "Removed option staging_config."
+    log "INFO" "delete_temp_staging:step2" "Removed option staging_environment."
+  fi
+  if [ "$step" -ge 1 ]; then
+    rm -rf "$STAGING_DIR"
+    log "INFO" "delete_temp_staging:step1" "Removed staging directory."
+  fi
+  set -e
+  log "ERROR" "delete_temp_staging" "$message"
+  error "$message"
+}
+
+# --- Utility: Drop all views and tables robustly ---
+drop_views_and_tables() {
+  set -e
+  local WP_PATH="$1"
+  log "INFO" "drop_views_and_tables" "About to query views in $WP_PATH"
+
+  # --------------------
+  # VIEWS
+  # --------------------
+  # Scope the view list to this install's table prefix, the way the table list below already is.
+  # Production and staging share one database, so an unscoped query returns BOTH environments'
+  # views and the loop drops them all: calling this for staging destroyed production's views. It
+  # also broke clone outright once the dump became schema-only, because the table list captured at
+  # startup still named those views and mysqldump then exited with "Couldn't find table".
+  # If the prefix cannot be resolved, drop nothing rather than fall back to dropping everything.
+  local VIEW_PREFIX VIEW_LIKE
+  # || true is required: this function runs under set -e, and a plain assignment from a failing
+  # command substitution exits the shell before the guard below can run. That turned a staging
+  # install whose tables are already gone (a half-finished previous clone, the exact case this
+  # cleanup exists for) from "carry on" into "die here".
+  VIEW_PREFIX=$(wp eval 'global $wpdb; echo $wpdb->prefix;' --path="$WP_PATH" --skip-themes --skip-plugins --quiet 2>/dev/null || true)
+  # mu-plugins are NOT skipped by --skip-plugins and can print to stdout, so take the last
+  # non-empty line and require it to look like a table prefix. A prefix with a stray newline
+  # produced a LIKE that matched nothing and dropped no views while reporting success.
+  VIEW_PREFIX=$(printf '%s' "$VIEW_PREFIX" | tr -d '\r' | awk 'NF{v=$0} END{print v}')
+  case "$VIEW_PREFIX" in
+    ''|*[!A-Za-z0-9_]*) VIEW_PREFIX='' ;;
+  esac
+  TMP_VIEWS_LOG=$(mktemp)
+  if [ -z "$VIEW_PREFIX" ]; then
+    log "ERROR" "drop_views_and_tables" "Unable to resolve the table prefix for $WP_PATH; skipping view drop."
+    : > "$TMP_VIEWS_LOG"
+    VIEWS_STATUS=0
+  else
+    VIEW_LIKE=$(printf '%s' "$VIEW_PREFIX" | sed 's/[_%]/\\&/g')
+    log "INFO" "drop_views_and_tables" "BEFORE QUERY: wp db query SELECT table_name ... LIKE '${VIEW_LIKE}%'"
+    wp db query "SELECT table_name FROM information_schema.views WHERE table_schema=DATABASE() AND table_name LIKE '${VIEW_LIKE}%' ESCAPE '\\\\';" --skip-column-names --path="$WP_PATH" --skip-themes --skip-plugins --quiet >"$TMP_VIEWS_LOG" 2>&1
+    VIEWS_STATUS=$?
+  fi
+  log "INFO" "drop_views_and_tables" "AFTER QUERY, exit code: $VIEWS_STATUS"
+  VIEWS=$(cat "$TMP_VIEWS_LOG")
+  log "INFO" "drop_views_and_tables" "AFTER QUERY, VIEWS_RAW: $VIEWS"
+  if [ $VIEWS_STATUS -ne 0 ]; then
+    log "ERROR" "drop_views_and_tables" "Error querying views: $VIEWS"
+  fi
+  rm -f "$TMP_VIEWS_LOG"
+
+  if [ -n "$VIEWS" ]; then
+    for VIEW in $VIEWS; do
+      log "INFO" "drop_views_and_tables" "Dropping view: $VIEW"
+      TMP_DROP_VIEW_LOG=$(mktemp)
+      wp db query "DROP VIEW IF EXISTS \`$VIEW\`;" --path="$WP_PATH" --skip-themes --skip-plugins --quiet >"$TMP_DROP_VIEW_LOG" 2>&1
+      DROP_VIEW_STATUS=$?
+      DROP_VIEW_OUT=$(cat "$TMP_DROP_VIEW_LOG")
+      if [ $DROP_VIEW_STATUS -ne 0 ]; then
+        log "ERROR" "drop_views_and_tables" "Error dropping view $VIEW: $DROP_VIEW_OUT"
+      else
+        log "INFO" "drop_views_and_tables" "Dropped view $VIEW: $DROP_VIEW_OUT"
+      fi
+      rm -f "$TMP_DROP_VIEW_LOG"
+    done
+  fi
+
+  # --------------------
+  # TABLES (con retry)
+  # --------------------
+  log "INFO" "drop_views_and_tables" "About to query tables in $WP_PATH"
+  TMP_TABLES_LOG=$(mktemp)
+  log "INFO" "drop_views_and_tables" "BEFORE QUERY: wp db tables ..."
+  wp db tables --all-tables-with-prefix --format=csv --path="$WP_PATH" --skip-themes --skip-plugins --quiet >"$TMP_TABLES_LOG" 2>&1
+  TABLES_STATUS=$?
+  log "INFO" "drop_views_and_tables" "AFTER QUERY, exit code: $TABLES_STATUS"
+  raw_tables=$(cat "$TMP_TABLES_LOG")
+  log "INFO" "drop_views_and_tables" "AFTER QUERY, TABLES_RAW: $raw_tables"
+  if [ $TABLES_STATUS -ne 0 ]; then
+    log "ERROR" "drop_views_and_tables" "Error querying tables: $raw_tables"
+  fi
+  rm -f "$TMP_TABLES_LOG"
+
+  # Convert CSV string to array
+  IFS=',' read -r -a remaining_tables <<< "$raw_tables"
+
+  # Retry up to 2 times for each folder
+  local attempt
+  declare -A first_attempt_errors=()
+  for attempt in 1 2; do
+    if [ ${#remaining_tables[@]} -eq 0 ]; then
+      break
+    fi
+    log "INFO" "drop_views_and_tables" "Attempt #$attempt to drop tables: ${remaining_tables[*]}"
+    local new_remaining=()
+    for TABLE in "${remaining_tables[@]}"; do
+      log "INFO" "drop_views_and_tables" "Dropping table: $TABLE (attempt $attempt)"
+      TMP_DROP_TABLE_LOG=$(mktemp)
+      set +e
+      wp db query "DROP TABLE IF EXISTS $TABLE;" --path="$WP_PATH" --skip-themes --skip-plugins --quiet >"$TMP_DROP_TABLE_LOG" 2>&1
+      DROP_TABLE_STATUS=$?
+      set -e
+      DROP_TABLE_OUT=$(cat "$TMP_DROP_TABLE_LOG")
+      if [ -n "$DROP_TABLE_OUT" ]; then
+        log "ERROR" "drop_views_and_tables" "DROP TABLE output for $TABLE: $DROP_TABLE_OUT"
+      fi
+      if [ $DROP_TABLE_STATUS -ne 0 ]; then
+        log "ERROR" "drop_views_and_tables" "Error dropping table $TABLE on attempt $attempt"
+        # If it's the first attempt, I'll report the error but leave it on the retry list.
+        if [ "$attempt" -eq 1 ]; then
+          first_attempt_errors["$TABLE"]=1
+          new_remaining+=("$TABLE")
+        else
+          # Second failed attempt: remains on the final list
+          new_remaining+=("$TABLE")
+        fi
+      else
+        log "INFO" "drop_views_and_tables" "Dropped table $TABLE successfully on attempt $attempt"
+        # If there was an error from the first attempt, it is now solved: do nothing, i.e. we remove it
+        unset first_attempt_errors["$TABLE"]
+      fi
+      rm -f "$TMP_DROP_TABLE_LOG"
+    done
+    remaining_tables=("${new_remaining[@]}")
+    # If there are no more remaining, I'm out
+    if [ ${#remaining_tables[@]} -eq 0 ]; then
+      break
+    fi
+  done
+
+  if [ ${#remaining_tables[@]} -ne 0 ]; then
+    log "ERROR" "drop_views_and_tables" "Could not drop tables after retries: ${remaining_tables[*]}"
+  else
+    log "INFO" "drop_views_and_tables" "All tables dropped successfully (any errors from the first attempt have been resolved)."
+  fi
+}
+
+# --- Utility: rewrite table/constraint/trigger prefixes in a SQL dump file (in place) ---
+#
+# Replaces the old per-flow `sed` blocks. Rewrites fully-qualified table identifiers from one
+# prefix to another, re-prefixes CONSTRAINT and TRIGGER symbols (stripping any existing
+# prod_/staging_ prefix first so they never double up), and optionally strips mysqldump DEFINER
+# clauses (which reference a MySQL account that may not exist or lack privilege on shared hosting,
+# and would otherwise fail the import of views/triggers).
+#
+# The table pattern matches any backticked identifier starting with the prefix, not just word
+# characters. MySQL allows hyphens, dots, spaces and non-ASCII in a table name, and missing one is
+# destructive now that the dump is schema-only: the unrewritten `DROP TABLE IF EXISTS` / `CREATE
+# TABLE` pair targets the SOURCE table, so importing it drops the production table and recreates it
+# empty. The old full dump refilled it from its own INSERTs, which hid this.
+#
+# Args: $1 file, $2 from_prefix, $3 to_prefix, $4 constraint/trigger name prefix (staging_/prod_),
+#       $5 strip_definer (1 to strip, default 0).
+# Returns 0 on success, 1 on failure.
+rewrite_dump_prefixes() {
+  local sql_file="$1"
+  local from_prefix="$2"
+  local to_prefix="$3"
+  local name_prefix="$4"
+  local strip_definer="${5:-0}"
+  local tables_csv="${6:-}"
+
+  # The table list is required. Without it the only way to find table names in the dump is to match
+  # the prefix anywhere, and that is not safe: see below.
+  [ -n "$tables_csv" ] || return 1
+
+  NFD_FROM="$from_prefix" NFD_TO="$to_prefix" NFD_NP="$name_prefix" \
+  NFD_TABLES="$tables_csv" NFD_STRIP="$strip_definer" perl -0777 -i -pe '
+    my $from = $ENV{NFD_FROM};
+    my $to   = $ENV{NFD_TO};
+    my $np   = $ENV{NFD_NP};
+    my %tbl  = map { $_ => 1 } grep { length } split /,/, $ENV{NFD_TABLES};
+    # Rewrite a backticked identifier only when it is one of the tables actually being dumped.
+    # Matching the prefix anywhere renames COLUMN and INDEX names that happen to start with the
+    # table prefix too (wp_user_id and similar are a normal naming convention for plugin tables),
+    # which leaves the staging schema with columns the site does not know about and makes the row
+    # copy fail with "Unknown column".
+    s{`([^`]*)`}{
+      my $id = $1;
+      ($tbl{$id} && index($id, $from) == 0)
+        ? q{`} . $to . substr($id, length $from) . q{`}
+        : q{`} . $id . q{`};
+    }ge;
+    s{CONSTRAINT\s+`(?:prod_|staging_)?([^`]+)`}{"CONSTRAINT `".$np.$1."`"}gie;
+    s{TRIGGER\s+`(?:prod_|staging_)?([^`]+)`}{"TRIGGER `".$np.$1."`"}gie;
+    if ($ENV{NFD_STRIP} eq "1") {
+      s{/\*!\d+\s+DEFINER=[^*]*\*/}{}g;
+    }
+  ' "$sql_file" || return 1
+
+  # Safety net for the whole class of bug this function can cause. Assert POSITIVELY that every
+  # DROP/CREATE now names a destination table. Testing the other way round -- "nothing still names
+  # a SOURCE table" -- looks equivalent but is not: when the prefix handed in does not match what
+  # is actually in the dump (deploy_db takes the table list from the staging install but builds the
+  # prefix from production's, and nothing checks they agree), the rewrite matches nothing, the
+  # surviving statements name neither prefix, and the negative test passes. The import then drops
+  # and recreates the live source tables empty.
+  local bt stray line n
+  bt='`'
+  stray=''
+  while IFS= read -r line; do
+    n=${line#*${bt}}
+    n=${n%${bt}*}
+    [ -n "$n" ] || continue
+    case "$n" in
+      "${to_prefix}"*) ;;
+      *) stray="$n"; break ;;
+    esac
+  done < <(grep -E "^(DROP TABLE IF EXISTS|CREATE TABLE) ${bt}" "$sql_file" || true)
+  if [ -n "$stray" ]; then
+    return 1
+  fi
+  return 0
+}
+
+# --- Rewrite prefixes in a TRIGGER-only dump (in place) ---
+#
+# Triggers need their own rewrite, not rewrite_dump_prefixes: dump tools (notably mariadb-dump)
+# emit trigger identifiers UNQUOTED -- e.g. `TRIGGER wp_trg AFTER INSERT ON wp_parent ... INSERT
+# INTO wp_log ...` -- so a backtick-only rewrite leaves the trigger name unchanged (it then
+# collides with production's same-named trigger in the shared schema) and, worse, leaves the body
+# pointing at production tables (a staging trigger must never write to production). This rewrites,
+# handling quoted OR bare identifiers: the trigger name (prefixed for schema-uniqueness), its
+# target table, and body table references after INTO/UPDATE/FROM/JOIN/TABLE; and strips DEFINER.
+# Args: $1 file, $2 from_prefix, $3 to_prefix, $4 trigger-name prefix (staging_/prod_).
+rewrite_trigger_dump() {
+  local sql_file="$1"
+  local from_prefix="$2"
+  local to_prefix="$3"
+  local name_prefix="$4"
+  NFD_FROM="$from_prefix" NFD_TO="$to_prefix" NFD_NP="$name_prefix" NFD_DB="${DB_NAME:-}" perl -0777 -i -pe '
+    my $from = quotemeta $ENV{NFD_FROM};
+    my $to   = $ENV{NFD_TO};
+    my $np   = $ENV{NFD_NP};
+    # Strip DEFINER clauses (the referenced account may not exist / lack privilege on the target).
+    s{/\*!\d+\s+DEFINER=[^*]*\*/}{}g;
+    # Trigger name (quoted or bare), immediately before BEFORE/AFTER: strip any existing
+    # prod_/staging_ and prepend the target prefix so it is unique in the shared schema.
+    # Backticked form first, accepting any characters: a trigger named `wp_my-trg` was left
+    # unprefixed by a word-character pattern and then collided with the source trigger in the
+    # shared schema (ERROR 1359). The bare form stays word-characters, which is all an unquoted
+    # identifier can hold.
+    s{(\bTRIGGER\s+)`(?:prod_|staging_)?([^`]+)`(\s+(?:BEFORE|AFTER)\b)}{$1."`".$np.$2."`".$3}gie;
+    s{(\bTRIGGER\s+)(?:prod_|staging_)?([A-Za-z0-9_]+)(\s+(?:BEFORE|AFTER)\b)}{$1."`".$np.$2."`".$3}gie;
+    # References qualified with THIS database (db.tbl, `db`.`tbl`, db . tbl). The rules below
+    # anchor on the prefix appearing directly after a keyword or a backtick, so a qualifier hid the
+    # table from both and the reference survived verbatim: a staging trigger then wrote into the
+    # PRODUCTION table. Staging and production share one database, so the qualifier is redundant
+    # and is dropped.
+    #
+    # Only the real database name is matched. Accepting any qualifier would rewrite alias.column
+    # and table.column too -- `SELECT s.wp_flag FROM wp_src s` became SELECT `staging_wp_flag`,
+    # which imports cleanly and then fails at runtime with "Unknown column". A qualifier naming a
+    # DIFFERENT database is left alone: it points outside the shared database, so it is not part of
+    # the staging/production boundary.
+    if (length $ENV{NFD_DB}) {
+      my $db = quotemeta $ENV{NFD_DB};
+      s{(?<![A-Za-z0-9_])`?$db`?\s*\.\s*`?$from([A-Za-z0-9_]+)`?}{"`".$to.$1."`"}gie;
+    }
+    # The trigger target table after the event (quoted or bare).
+    # Backticked first so a name with a hyphen or space is taken whole; the bare alternative can
+    # only ever be word characters. Using the narrow pattern for both produced malformed SQL
+    # (ON `staging_wp_my`-table`) that the residual check then reported as clean.
+    s{(\b(?:BEFORE|AFTER)\s+(?:INSERT|UPDATE|DELETE)\s+ON\s+)`$from([^`]+)`}{$1."`".$to.$2."`"}gie;
+    s{(\b(?:BEFORE|AFTER)\s+(?:INSERT|UPDATE|DELETE)\s+ON\s+)$from([A-Za-z0-9_]+)}{$1."`".$to.$2."`"}gie;
+    # Backticked source-table references anywhere in the body.
+    s{`$from([^`]+)`}{"`".$to.$1."`"}ge;
+    # Bare source-table references in the body after a table-referencing keyword.
+    # Only INSERT/REPLACE INTO names a table. A bare INTO also matches SELECT ... INTO <var>,
+    # which rewrote a declared local variable into a table identifier and made the trigger fail
+    # to import with "Undeclared variable".
+    # The modifier list must match the one the residual check uses, or a body the check flags is
+    # one the rewrite could have fixed: INSERT IGNORE INTO went unrewritten and the copy then
+    # refused the trigger outright instead of redirecting it.
+    s{\b((?:INSERT|REPLACE)(?:\s+(?:LOW_PRIORITY|HIGH_PRIORITY|DELAYED|IGNORE))*\s+INTO|UPDATE(?:\s+(?:LOW_PRIORITY|IGNORE))*|FROM|JOIN|TABLE)(\s+)`?$from([A-Za-z0-9_]+)`?}{$1.$2."`".$to.$3."`"}gie;
+  ' "$sql_file"
+}
+
+# --- Utility: report trigger references the rewrite could not redirect ---
+#
+# rewrite_trigger_dump is a set of regexes over SQL text, and regexes cannot cover every way a
+# table can be named: a modifier between the keyword and the table (UPDATE LOW_PRIORITY t), a
+# comment in that position, or a CALL into a stored procedure -- procedures are never dumped or
+# rewritten, so whatever the procedure writes is untouched by any rewrite here.
+#
+# Importing such a trigger silently breaks the isolation the whole flow depends on: a trigger on
+# staging that still names a production table writes into production, and after deploy_db the
+# production trigger writes into staging. Refusing to import is the safe failure, so this reports
+# anything still pointing at the source environment and the caller aborts.
+#
+# Args: $1 rewritten trigger dump, $2 source prefix. Echoes the offending tokens, empty if clean.
+_nfd_trigger_dump_residuals() {
+  local sql_file="$1"
+  local from_prefix="$2"
+  local src_tables="${3:-}"
+  NFD_FROM="$from_prefix" NFD_DB="${DB_NAME:-}" NFD_SRC_TABLES="$src_tables" perl -0777 -ne '
+    my $from = quotemeta $ENV{NFD_FROM};
+    my $s = $_;
+    # Blank quoted literals and ordinary comments first, so trigger TEXT that merely mentions a
+    # table name cannot raise a false alarm. Versioned comments are deliberately left alone:
+    # mysqldump wraps the entire trigger body in one, so blanking those blanks what we are checking.
+    $s =~ s/\x27(?:[^\x27\\]|\\.)*\x27/\x27\x27/g;
+    $s =~ s/"(?:[^"\\]|\\.)*"/""/g;
+    $s =~ s{/\*(?!!).*?\*/}{ }gs;
+    $s =~ s{--[^\n]*}{ }g;
+    my %bad;
+    # A source-prefixed table still sitting after a table-referencing keyword.
+    # A source-prefixed table still sitting in a TABLE position: directly after a table-referencing
+    # keyword, with only optional modifiers and whitespace in between. Scanning a fixed window
+    # after the keyword instead was wrong both ways: it flagged the column list of an already
+    # correct statement (INSERT INTO `staging_wp_x` (wp_user_id, ...) reported wp_user_id and
+    # failed the whole copy), and it missed a modifier split across a newline because the window
+    # excluded newlines. \s spans newlines, and blanked comments have become spaces by now.
+    # Any SOURCE TABLE NAME still present after rewriting is a reference that was not redirected.
+    # Testing membership of the authoritative table list is exact, so it needs no guesses about
+    # SQL shape: it catches the forms the keyword heuristics missed (STRAIGHT_JOIN, which \bJOIN
+    # cannot match; comma-joined tables; multi-table DELETE) without flagging aliases, columns or
+    # modifiers, which is what the heuristics kept getting wrong in both directions.
+    if (length $ENV{NFD_SRC_TABLES}) {
+      my %src = map { $_ => 1 } grep { length } split /,/, $ENV{NFD_SRC_TABLES};
+      for my $t (keys %src) {
+        my $q = quotemeta $t;
+        $bad{$t} = 1 if $s =~ /`$q`/ || $s =~ /(?<![A-Za-z0-9_])$q(?![A-Za-z0-9_])/;
+      }
+    }
+    $bad{"CALL"} = 1 if $s =~ /\bCALL\s+[`A-Za-z0-9_]/i;
+    print join(" ", sort keys %bad);
+  ' "$sql_file"
+}
+
+# --- Utility: locate a mysqldump-compatible binary ---
+# `wp db export` cannot be used for schema/trigger-only dumps: WP-CLI mangles valueless mysqldump
+# flags (--no-data, --triggers, --no-create-info are dropped or passed with an empty value), so the
+# "schema-only" dump silently still contains row data. The dump binary honors the flags correctly,
+# so those dumps call it directly. Prefer mysqldump; fall back to MariaDB's mariadb-dump.
+_nfd_dump_bin() {
+  if command -v mysqldump >/dev/null 2>&1; then
+    printf 'mysqldump'
+  elif command -v mariadb-dump >/dev/null 2>&1; then
+    printf 'mariadb-dump'
+  else
+    printf ''
+  fi
+}
+
+# --- Utility: write a private MySQL defaults-extra-file from the resolved DB globals ---
+# Keeps the password out of the process list (no -p on the command line). Parses DB_HOST forms
+# host, host:port and host:/path/to/socket. Echoes the file path; the caller must rm it.
+_nfd_mysql_defaults_file() {
+  local f host port socket esc_user esc_pass
+  f=$(mktemp) || return 1
+  chmod 600 "$f"
+  # A "p:" prefix on DB_HOST asks for a persistent connection. WordPress core does not honour it
+  # (parse_db_host() reads the p as the host), but db.php drop-ins such as HyperDB and LudicrousDB
+  # do, and those are what put it in wp-config in the first place. Strip it: a colon is not legal
+  # in a hostname, so this can never discard part of a real one, and left in place "p:localhost"
+  # parses as host "p" with the real host taken for a port and every dump and copy fails.
+  local raw="$DB_HOST"
+  case "$raw" in p:*) raw="${raw#p:}" ;; esac
+  host="$raw"; port=""; socket=""
+  case "$raw" in
+    *:/*) host="${raw%%:*}"; socket="${raw#*:}" ;;
+    *:*)  host="${raw%%:*}"; port="${raw##*:}" ;;
+  esac
+  # An option file is not shell. In an UNQUOTED value MySQL ends the value at a '#' (it starts a
+  # comment), strips surrounding whitespace, and expands backslash escapes (\s, \t, \n, \\), so a
+  # wp-config password containing any of those was written correctly but read back mangled and
+  # authentication failed. A double-quoted value is taken literally, with only backslash and
+  # double-quote needing to be escaped. Credentials still never appear in the process list.
+  # Escape with parameter expansion rather than sed: sed operates on the locale's character set and
+  # aborts with "illegal byte sequence" on a password byte that is not valid in it, which would
+  # yield an empty password and a silent auth failure. Expansion is byte-safe and needs no
+  # subprocess. Backslash must be doubled BEFORE the quote is escaped, or the escaping backslash
+  # would itself be doubled.
+  esc_user=${DB_USER//\\/\\\\}; esc_user=${esc_user//\"/\\\"}
+  esc_pass=${DB_PASS//\\/\\\\}; esc_pass=${esc_pass//\"/\\\"}
+  {
+    printf '[client]\n'
+    printf 'user="%s"\n' "$esc_user"
+    printf 'password="%s"\n' "$esc_pass"
+    [ -n "$host" ]   && printf 'host=%s\n' "$host"
+    [ -n "$port" ]   && printf 'port=%s\n' "$port"
+    [ -n "$socket" ] && printf 'socket=%s\n' "$socket"
+  } > "$f"
+  printf '%s' "$f"
+}
+
+# --- Dump SCHEMA ONLY (no rows, no triggers) via the dump binary ---
+# Args: $1 output file, $2 log step, $3 wp path (for charset), $4 optional CSV table list.
+# Returns 0 on success, 1 on failure. Schema-only + --skip-lock-tables + --no-tablespaces keeps it
+# safe and privilege-light on shared hosting (no LOCK TABLES / PROCESS grant needed).
+dump_schema_only() {
+  local out="$1"
+  local log_step="$2"
+  local wp_path="$3"
+  local tables_csv="${4:-}"
+  local bin charset dfile err status
+  bin=$(_nfd_dump_bin)
+  if [ -z "$bin" ]; then
+    log "ERROR" "$log_step" "No mysqldump/mariadb-dump binary available."
+    return 1
+  fi
+  # Refuse an empty table list: mysqldump would then dump the ENTIRE database, and since production
+  # and staging tables share one database, that would pull the wrong set into a prefix-rewrite +
+  # --add-drop-table import (e.g. rebuilding production from prod's own tables). Callers pass an
+  # explicit list; an empty one means an upstream `wp db tables` failure, which must fail loudly.
+  if [ -z "$tables_csv" ]; then
+    log "ERROR" "$log_step" "No tables specified for schema dump (refusing to dump the whole shared database)."
+    return 1
+  fi
+  charset=$(resolve_db_charset "$wp_path")
+  dfile=$(_nfd_mysql_defaults_file) || { log "ERROR" "$log_step" "Unable to create DB defaults file."; return 1; }
+  local -a tbls=()
+  IFS=',' read -r -a tbls <<< "$tables_csv"
+  err=$(mktemp)
+  "$bin" --defaults-extra-file="$dfile" --no-data --skip-triggers --add-drop-table \
+    --skip-lock-tables --no-tablespaces --default-character-set="$charset" \
+    "$DB_NAME" "${tbls[@]}" > "$out" 2>"$err"
+  status=$?
+  rm -f "$dfile"
+  if [ $status -ne 0 ]; then
+    log "ERROR" "$log_step" "Schema dump failed: $(cat "$err" 2>/dev/null)"
+    rm -f "$err"
+    return 1
+  fi
+  rm -f "$err"
+  return 0
+}
+
+# --- Dump TRIGGERS ONLY via the dump binary ---
+# Args: $1 output file, $2 log step, $3 wp path (for charset), $4 optional CSV table list.
+dump_triggers_only() {
+  local out="$1"
+  local log_step="$2"
+  local wp_path="$3"
+  local tables_csv="${4:-}"
+  local bin charset dfile err status
+  bin=$(_nfd_dump_bin)
+  if [ -z "$bin" ]; then
+    log "ERROR" "$log_step" "No mysqldump/mariadb-dump binary available."
+    return 1
+  fi
+  # Refuse an empty table list (see dump_schema_only): an empty list dumps triggers for the whole
+  # shared database, mixing production and staging.
+  if [ -z "$tables_csv" ]; then
+    log "ERROR" "$log_step" "No tables specified for trigger dump (refusing to scan the whole shared database)."
+    return 1
+  fi
+  charset=$(resolve_db_charset "$wp_path")
+  dfile=$(_nfd_mysql_defaults_file) || { log "ERROR" "$log_step" "Unable to create DB defaults file."; return 1; }
+  local -a tbls=()
+  IFS=',' read -r -a tbls <<< "$tables_csv"
+  err=$(mktemp)
+  "$bin" --defaults-extra-file="$dfile" --no-create-info --no-data --triggers --skip-add-drop-table \
+    --skip-lock-tables --no-tablespaces --default-character-set="$charset" \
+    "$DB_NAME" "${tbls[@]}" > "$out" 2>"$err"
+  status=$?
+  rm -f "$dfile"
+  if [ $status -ne 0 ]; then
+    log "ERROR" "$log_step" "Trigger dump failed: $(cat "$err" 2>/dev/null)"
+    rm -f "$err"
+    return 1
+  fi
+  rm -f "$err"
+  return 0
+}
+
+# --- Raw MySQL runner for the server-side copy (no WordPress bootstrap) ---
+# The bulk copy issues hundreds of small statements (table list, per-table column/PK lookups, one
+# INSERT per chunk). Routing each through `wp db query` would boot WordPress every time -- on a
+# many-table site that is hundreds of bootstraps, dwarfing the actual data work. Instead the copy
+# opens ONE MySQL defaults file (password kept out of the process list) and runs the raw client.
+# _NFD_COPY_DFILE is set by copy_table_data_server_side for the duration of the copy. -D "$DB_NAME"
+# makes DATABASE() resolve to the shared DB that holds both the production and staging tables.
+_NFD_COPY_DFILE=""
+_NFD_MYSQL_BIN=""
+# Prefer the native `mariadb` client where present: invoking MariaDB's `mysql` compat symlink prints
+# a "Deprecated program name" warning to stderr that would otherwise contaminate any call that
+# captures stderr. On real MySQL hosts `mariadb` is absent and `mysql` is used (and is silent).
+_nfd_mysql_bin() {
+  if command -v mariadb >/dev/null 2>&1; then printf 'mariadb'; else printf 'mysql'; fi
+}
+_nfd_msql() {
+  "${_NFD_MYSQL_BIN:-mysql}" --defaults-extra-file="$_NFD_COPY_DFILE" -D "$DB_NAME" -N -e "$1"
+}
+
+# --- Utility: escape an identifier for use between backticks ---
+# Table and column names come from information_schema, and MySQL identifiers may legally contain
+# hyphens, dots, spaces and non-ASCII characters. All of those quote correctly between backticks
+# and must keep copying. The only character that needs handling is a backtick itself, which MySQL
+# escapes by doubling; left alone it closes the quoting and the statement means something else.
+_nfd_sql_ident() {
+  local s=${1//\`/\`\`}
+  printf '%s' "$s"
+}
+
+# --- Utility: escape a value for use inside a single-quoted SQL string ---
+# The information_schema lookups compare the table name as a string rather than using it as an
+# identifier, so those need string escaping, not backtick escaping.
+_nfd_sql_str() {
+  local s=${1//\\/\\\\}
+  s=${s//\'/\\\'}
+  printf '%s' "$s"
+}
+
+# --- Utility: comma-separated backticked list of NON-generated columns for a table ---
+# Generated (virtual/stored) columns cannot be written by INSERT, so they are excluded; MySQL
+# recomputes them on the destination. The test is GENERATION_EXPRESSION, not EXTRA: on MySQL 8 an
+# ordinary column with an expression default (e.g. DEFAULT (UUID())) reports EXTRA='DEFAULT_GENERATED',
+# so an "EXTRA LIKE '%GENERATED%'" test would wrongly drop it and lose its data. GENERATION_EXPRESSION
+# is non-empty only for true generated columns on both MySQL and MariaDB.
+# Echoes e.g. "`ID`,`post_title`"; empty on failure.
+_nfd_table_columns() {
+  local table="$1"
+  local out="" col esc
+  esc=$(_nfd_sql_str "$table")
+  while IFS= read -r col; do
+    [ -z "$col" ] && continue
+    col=${col//\`/\`\`}
+    if [ -z "$out" ]; then out="\`$col\`"; else out="$out,\`$col\`"; fi
+  done < <(_nfd_msql "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='${esc}' AND (GENERATION_EXPRESSION IS NULL OR GENERATION_EXPRESSION='') ORDER BY ORDINAL_POSITION;" 2>/dev/null)
+  printf '%s' "$out"
+}
+
+# --- Utility: name of a table's single-column numeric primary key, or empty ---
+# Chunked copy needs a stable, orderable, single-column key. Returns the column name only when the
+# table has exactly one PRIMARY KEY column AND that column is an integer type; otherwise empty, and
+# the caller copies the table in one statement (such tables are small: term_relationships, etc.).
+_nfd_table_pk() {
+  local table="$1"
+  local pkinfo pkcount pkcol pktype esc
+  esc=$(_nfd_sql_str "$table")
+  pkinfo=$(_nfd_msql "SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='${esc}' AND COLUMN_KEY='PRI';" 2>/dev/null)
+  pkcount=$(printf '%s\n' "$pkinfo" | grep -c .)
+  [ "$pkcount" -eq 1 ] || { printf ''; return; }
+  # Split on the tab the client emits rather than on whitespace: a column name may contain spaces.
+  pkcol=$(printf '%s' "$pkinfo" | awk -F'\t' '{print $1}')
+  pktype=$(printf '%s' "$pkinfo" | awk -F'\t' '{print $2}')
+  case "$pktype" in
+    tinyint|smallint|mediumint|int|integer|bigint) printf '%s' "$pkcol" ;;
+    *) printf '' ;;
+  esac
+}
+
+# --- Copy table ROW DATA from one prefix to another, entirely server-side ---
+#
+# Replaces the "dump to disk + wp db import" data path. Because source and staging tables share one
+# database (staging differs only by the `staging_` table prefix), rows are copied with
+# INSERT ... SELECT: no row bytes cross the client connection, so the copy cannot trip the
+# per-account MySQL bytes_received cap the reimport used to hit, and it scales with site size
+# instead of failing on it (RCA: DEVSUP-149696). The destination tables must already exist -- their
+# schema is imported first from a --no-data dump, which is only a few KB.
+#
+# Per table: build the explicit non-generated column list; if the table has a single numeric PK,
+# copy it in key ranges of NFD_STAGING_COPY_CHUNK rows (default 50000) so no single statement is
+# unbounded; otherwise copy it in one statement. FOREIGN_KEY_CHECKS/UNIQUE_CHECKS are disabled
+# within each statement (a fresh wp db query connection does not carry session state between calls),
+# so parent/child table order does not matter. NFD_STAGING_COPY_PACE seconds (default 0) are slept
+# between chunks for extra head-room on a busy box.
+#
+# Args: $1 connection wp path, $2 source prefix, $3 destination prefix, $4 log step label.
+# Returns 0 on success, 1 on failure (with a specific, logged error naming the table).
+copy_table_data_server_side() {
+  local conn_path="$1"   # kept for call-site compatibility; the connection is via the defaults file
+  local src_prefix="$2"
+  local dst_prefix="$3"
+  local log_step="$4"
+  local tables_csv="${5:-}"
+
+  # Copy exactly the tables the schema was built from. Re-deriving the list here with a LIKE meant
+  # table identity was decided three different ways (SHOW TABLES for the dump, information_schema
+  # for the copy, the dump list for the rewrite) and they do not agree: information_schema LIKE is
+  # case-insensitive on MariaDB while SHOW TABLES is not, so a table named WP_Caps was enumerated
+  # for copying with no staging schema behind it and the copy failed with ERROR 1146.
+  if [ -z "$tables_csv" ]; then
+    log "ERROR" "$log_step" "No tables given to copy; refusing to guess the table list."
+    return 1
+  fi
+
+  _NFD_COPY_DFILE=$(_nfd_mysql_defaults_file) || { log "ERROR" "$log_step" "Unable to create DB defaults file."; return 1; }
+  _NFD_MYSQL_BIN=$(_nfd_mysql_bin)
+  # Single exit point so the defaults file (which holds the DB password) is removed on every path.
+  local rc=0
+  _copy_run "$src_prefix" "$dst_prefix" "$log_step" "$tables_csv" || rc=$?
+  rm -f "$_NFD_COPY_DFILE"; _NFD_COPY_DFILE=""
+  return $rc
+}
+
+# Inner worker for copy_table_data_server_side (separated so the defaults file is always cleaned up).
+# All statements go through _nfd_msql (raw client, one connection setup each, no WordPress boot).
+_copy_run() {
+  local src_prefix="$1"
+  local dst_prefix="$2"
+  local log_step="$3"
+  # Both tunables are operator-supplied and are interpolated straight into SQL / passed to sleep,
+  # so validate them here. A non-numeric or non-positive chunk produced "LIMIT 1 OFFSET -1", which
+  # the boundary lookup then reports as a syntax error and the whole copy aborts; falling back to
+  # the default keeps a typo in an env var from failing an otherwise healthy staging build.
+  local chunk="${NFD_STAGING_COPY_CHUNK:-50000}"
+  local chunk_ok=1
+  case "$chunk" in
+    ''|*[!0-9]*) chunk_ok=0 ;;
+  esac
+  # A string of digits is not automatically a decimal number to $(( )): a leading zero makes it
+  # octal, so "08" and "09" are arithmetic errors (which the boundary lookup then reports as a
+  # failure and aborts the copy) and "0100000" would silently mean 32768. Bound the length first so
+  # the conversion itself cannot overflow, then force base 10.
+  if [ "$chunk_ok" -eq 1 ] && [ "${#chunk}" -gt 9 ]; then
+    chunk_ok=0
+  fi
+  if [ "$chunk_ok" -eq 1 ]; then
+    chunk=$((10#$chunk))
+    if [ "$chunk" -lt 1 ]; then
+      chunk_ok=0
+    fi
+  fi
+  if [ "$chunk_ok" -eq 0 ]; then
+    log "ERROR" "$log_step" "Invalid NFD_STAGING_COPY_CHUNK='${NFD_STAGING_COPY_CHUNK}'; falling back to 50000."
+    chunk=50000
+  fi
+  # Target bytes per copy statement; paired with the row chunk above, whichever is smaller wins.
+  local max_mb="${NFD_STAGING_COPY_MAX_MB:-64}"
+  local max_mb_ok=1
+  case "$max_mb" in
+    ''|*[!0-9]*) max_mb_ok=0 ;;
+  esac
+  if [ "$max_mb_ok" -eq 1 ] && [ "${#max_mb}" -gt 6 ]; then
+    max_mb_ok=0
+  fi
+  # Force base 10 before any arithmetic, exactly as the chunk above does: "08" is a valid digit
+  # string but an invalid octal literal, and $(( )) treats a leading zero as octal. Without this
+  # the multiplication below aborts the whole script with "value too great for base".
+  if [ "$max_mb_ok" -eq 1 ]; then
+    max_mb=$((10#$max_mb))
+    if [ "$max_mb" -lt 1 ]; then
+      max_mb_ok=0
+    fi
+  fi
+  if [ "$max_mb_ok" -eq 0 ]; then
+    log "ERROR" "$log_step" "Invalid NFD_STAGING_COPY_MAX_MB='${NFD_STAGING_COPY_MAX_MB}'; falling back to 64."
+    max_mb=64
+  fi
+  local max_bytes=$(( max_mb * 1048576 ))
+  local pace="${NFD_STAGING_COPY_PACE:-0}"
+  case "$pace" in
+    ''|.|*[!0-9.]*|*.*.*)
+      log "ERROR" "$log_step" "Invalid NFD_STAGING_COPY_PACE='${NFD_STAGING_COPY_PACE}'; falling back to 0."
+      pace=0
+      ;;
+  esac
+  local like_prefix
+  like_prefix=$(printf '%s' "$src_prefix" | sed 's/[_%]/\\&/g')
+  # Prepended to every INSERT: FK/unique checks off (parent/child order is irrelevant) and a
+  # relaxed sql_mode so legacy values that predate STRICT mode (e.g. '0000-00-00' datetimes, which
+  # real WooCommerce/ActionScheduler data contains) copy verbatim -- matching what mysqldump's own
+  # header does on the old reimport path.
+  local sess="SET SESSION FOREIGN_KEY_CHECKS=0; SET SESSION UNIQUE_CHECKS=0; SET SESSION sql_mode='NO_AUTO_VALUE_ON_ZERO';"
+
+  log "INFO" "$log_step" "Copying table data server-side (src=${src_prefix} dst=${dst_prefix}, chunk=${chunk}, pace=${pace})"
+
+  # Classify every name once. Views carry no rows and are skipped; a name that is in the list but
+  # no longer in the schema is an error, not something to pass over quietly.
+  local meta
+  meta=$(_nfd_msql "SELECT TABLE_NAME, TABLE_TYPE FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE();" 2>&1)
+  if [ $? -ne 0 ] || printf '%s' "$meta" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+    log "ERROR" "$log_step" "Unable to read table metadata: $meta"
+    return 1
+  fi
+  local base_csv="," view_csv="," mname mtype
+  while IFS=$'\t' read -r mname mtype; do
+    [ -n "$mname" ] || continue
+    if [ "$mtype" = "BASE TABLE" ]; then base_csv="${base_csv}${mname},"; else view_csv="${view_csv}${mname},"; fi
+  done <<< "$meta"
+
+  local -a tbls=()
+  IFS=',' read -r -a tbls <<< "$tables_csv"
+  local tables copied=0
+  tables=$(printf '%s\n' "${tbls[@]}")
+
+  local table bare dst qtable qdst cols pk qpk minpk last lower_op bound out tchunk avg byte_rows
+  while IFS= read -r table; do
+    [ -z "$table" ] && continue
+    case "$base_csv" in
+      *",${table},"*) ;;
+      *)
+        case "$view_csv" in
+          *",${table},"*) log "INFO" "$log_step" "Skipping view $table"; continue ;;
+          *) log "ERROR" "$log_step" "Source table $table is no longer in the database."; return 1 ;;
+        esac
+        ;;
+    esac
+    copied=$((copied + 1))
+    bare="${table#"$src_prefix"}"
+    dst="${dst_prefix}${bare}"
+    # Escape once per table. Identifiers may legally contain a backtick, which MySQL doubles;
+    # everything else (hyphens, dots, spaces, non-ASCII) quotes as-is.
+    qtable=${table//\`/\`\`}
+    qdst=${dst//\`/\`\`}
+
+    cols=$(_nfd_table_columns "$table")
+    if [ -z "$cols" ]; then
+      log "ERROR" "$log_step" "No columns resolved for source table $table"
+      return 1
+    fi
+
+    pk=$(_nfd_table_pk "$table")
+    qpk=${pk//\`/\`\`}
+
+    # Cap the chunk by BYTES as well as by rows. The configured chunk is a row count, but row
+    # widths span orders of magnitude: 50000 rows of a page-builder post_content is gigabytes in a
+    # single statement, where the dump-and-import path this replaced never exceeded
+    # net_buffer_length per statement. A transaction that large means proportional undo, redo and
+    # binlog-cache pressure on a shared host. AVG_ROW_LENGTH is an InnoDB estimate, so it is only
+    # ever used to LOWER the chunk, and the result is floored so a bad estimate cannot reduce the
+    # copy to a crawl.
+    tchunk="$chunk"
+    avg=$(_nfd_msql "SELECT AVG_ROW_LENGTH FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='$(_nfd_sql_str "$table")';" 2>/dev/null)
+    case "$avg" in ''|*[!0-9]*) avg=0 ;; esac
+    if [ "$avg" -gt 0 ]; then
+      byte_rows=$(( max_bytes / avg ))
+      [ "$byte_rows" -lt 1000 ] && byte_rows=1000
+      [ "$byte_rows" -lt "$tchunk" ] && tchunk="$byte_rows"
+    fi
+    if [ "$tchunk" != "$chunk" ]; then
+      log "INFO" "$log_step" "Chunk for $table lowered to ${tchunk} rows (about ${avg} bytes/row)"
+    fi
+
+    if [ -z "$pk" ]; then
+      log "INFO" "$log_step" "Copying $table -> $dst (single statement; no single numeric PK)"
+      out=$(_nfd_msql "$sess INSERT INTO \`${qdst}\` (${cols}) SELECT ${cols} FROM \`${qtable}\`;" 2>&1)
+      if [ $? -ne 0 ] || printf '%s' "$out" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+        log "ERROR" "$log_step" "Failed copying $table -> $dst: $out"
+        return 1
+      fi
+      log "INFO" "$log_step" "Copied $table -> $dst"
+      continue
+    fi
+
+    # Capture stderr rather than discarding it: an empty result must mean "no rows", never "the
+    # lookup failed". Reading a failure as an empty table skipped the table silently and still
+    # returned success -- on deploy_db that left a production table empty after the pre-deploy
+    # backup had already been removed. A genuinely empty table returns NULL, not an error.
+    minpk=$(_nfd_msql "SELECT MIN(\`${qpk}\`) FROM \`${qtable}\`;" 2>&1)
+    if [ $? -ne 0 ] || printf '%s' "$minpk" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+      log "ERROR" "$log_step" "Unable to read the key range of $table: $minpk"
+      return 1
+    fi
+    if [ -z "$minpk" ] || [ "$minpk" = "NULL" ]; then
+      log "INFO" "$log_step" "Skipping empty table $table"
+      continue
+    fi
+
+    log "INFO" "$log_step" "Copying $table -> $dst (chunked by \`${qpk}\`, size ${tchunk})"
+    # The first range INCLUDES the lowest key, so the cursor never has to name "one below the
+    # minimum". Seeding it with MIN(pk)-1 instead underflows on an UNSIGNED key whose lowest value
+    # is 0 -- MySQL raises ERROR 1690 (BIGINT UNSIGNED value is out of range) -- and the copy then
+    # read that failure as an empty table and skipped it. lower_op flips to > after the first
+    # chunk, so every row is still copied exactly once.
+    lower_op=">="
+    last="$minpk"
+    while true; do
+      # An empty result here legitimately means "fewer than $chunk rows remain", which ends the
+      # loop with a final open-ended range. An ERROR must not take that same branch: doing so
+      # turned a failed boundary lookup into one unbounded INSERT covering the rest of the table,
+      # silently discarding the chunking this function exists to provide.
+      bound=$(_nfd_msql "SELECT \`${qpk}\` FROM \`${qtable}\` WHERE \`${qpk}\` ${lower_op} ${last} ORDER BY \`${qpk}\` ASC LIMIT 1 OFFSET $((tchunk - 1));" 2>&1)
+      if [ $? -ne 0 ] || printf '%s' "$bound" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+        log "ERROR" "$log_step" "Unable to resolve the next key boundary for $table: $bound"
+        return 1
+      fi
+      if [ -z "$bound" ] || [ "$bound" = "NULL" ]; then
+        out=$(_nfd_msql "$sess INSERT INTO \`${qdst}\` (${cols}) SELECT ${cols} FROM \`${qtable}\` WHERE \`${qpk}\` ${lower_op} ${last};" 2>&1)
+        if [ $? -ne 0 ] || printf '%s' "$out" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+          log "ERROR" "$log_step" "Failed copying $table -> $dst (final range ${lower_op} ${last}): $out"
+          return 1
+        fi
+        break
+      fi
+      out=$(_nfd_msql "$sess INSERT INTO \`${qdst}\` (${cols}) SELECT ${cols} FROM \`${qtable}\` WHERE \`${qpk}\` ${lower_op} ${last} AND \`${qpk}\` <= ${bound};" 2>&1)
+      if [ $? -ne 0 ] || printf '%s' "$out" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+        log "ERROR" "$log_step" "Failed copying $table -> $dst (range ${last}..${bound}): $out"
+        return 1
+      fi
+      last="$bound"
+      lower_op=">"
+      [ "$pace" != "0" ] && sleep "$pace"
+    done
+    log "INFO" "$log_step" "Copied $table -> $dst"
+  done < <(printf '%s\n' "$tables")
+
+  # Reporting success having copied nothing is what let a mismatched table list go unnoticed while
+  # the schema import had already emptied the destination.
+  if [ "$copied" -eq 0 ]; then
+    log "ERROR" "$log_step" "No tables were copied; the table list did not match anything in the database."
+    return 1
+  fi
+  return 0
+}
+
+# --- Copy TRIGGERS from one prefix to another, after the data copy ---
+#
+# Triggers must be created only after the row data is in place: a trigger present during the
+# server-side INSERT ... SELECT would fire on every copied row. Schema is therefore imported with
+# --skip-triggers, and this exports triggers only (--no-create-info --no-data --triggers), rewrites
+# their table/trigger prefixes (and strips DEFINER), and imports them into the target. The trigger
+# dump is tiny. A no-op when the source defines no triggers (the common case).
+#
+# Args: $1 source wp path, $2 target wp path, $3 --tables= value ("" for all), $4 from_prefix,
+#       $5 to_prefix, $6 constraint/trigger name prefix, $7 log step label.
+# Returns 0 on success (including "no triggers"), 1 on failure.
+copy_triggers() {
+  local src_path="$1"
+  local tgt_path="$2"
+  local tables_arg="$3"
+  local from_prefix="$4"
+  local to_prefix="$5"
+  local name_prefix="$6"
+  local log_step="$7"
+  local tfile charset out
+  tfile=$(mktemp) || return 1
+  charset=$(resolve_db_charset "$src_path")
+
+  # Trigger-only dump via the dump binary directly (wp db export drops valueless flags).
+  if ! dump_triggers_only "$tfile" "$log_step" "$src_path" "$tables_arg"; then
+    rm -f "$tfile"
+    return 1
+  fi
+
+  if ! grep -qi 'TRIGGER' "$tfile"; then
+    log "INFO" "$log_step" "No triggers to copy."
+    rm -f "$tfile"
+    return 0
+  fi
+
+  if ! rewrite_trigger_dump "$tfile" "$from_prefix" "$to_prefix" "$name_prefix"; then
+    log "ERROR" "$log_step" "Unable to rewrite trigger prefixes."
+    rm -f "$tfile"
+    return 1
+  fi
+
+  # Verify the rewrite actually redirected everything before importing. A trigger that still names
+  # the source environment would write across the staging/production boundary once installed, and
+  # nothing downstream would notice, so this fails the operation instead.
+  local residual
+  residual=$(_nfd_trigger_dump_residuals "$tfile" "$from_prefix" "$tables_arg")
+  if [ -n "$residual" ]; then
+    log "ERROR" "$log_step" "Refusing to import triggers: [${residual}] still reference the source environment after rewriting. Installing them would let a trigger on one environment write to the other. Review these triggers by hand."
+    rm -f "$tfile"
+    return 1
+  fi
+
+  out=$(wp db import "$tfile" --default-character-set="$charset" --path="$tgt_path" --skip-themes --skip-plugins --quiet 2>&1)
+  if [ $? -ne 0 ] || printf '%s' "$out" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+    log "ERROR" "$log_step" "Unable to import triggers: $out"
+    rm -f "$tfile"
+    return 1
+  fi
+
+  rm -f "$tfile"
+  log "INFO" "$log_step" "Triggers copied."
+  return 0
+}
+
+# --- Search-replace URLs, paced by table size ---
+#
+# Unlike the row copy, the URL rewrite cannot run server-side: WordPress stores serialized PHP in
+# options/postmeta/etc., where a raw SQL REPLACE() corrupts the serialized length prefixes, so the
+# values must be deserialized, replaced and re-serialized in PHP (this is what `wp search-replace`
+# does). That means the table data is streamed through the client. To keep that read volume under
+# the host's per-window MySQL byte ceiling on a large site, run one table at a time and sleep in
+# proportion to each table's on-disk size: NFD_STAGING_SR_RATE_MB MB per second of budget (default
+# 25; set 0 to disable pacing). Tiny tables add ~no delay. Net replacements are identical to a
+# single whole-database search-replace, and each table's failure is surfaced specifically.
+#
+# Args: $1 wp path, $2 from URL, $3 to URL, $4 log step label, $5 table prefix to scope tables.
+# Returns 0 on success, 1 on failure.
+search_replace_paced() {
+  local wp_path="$1"
+  local from_url="$2"
+  local to_url="$3"
+  local log_step="$4"
+  local tbl_prefix="$5"
+  local rate="${NFD_STAGING_SR_RATE_MB:-25}"
+  # This reaches awk as a divisor. A non-numeric value is not caught by awk's own "r <= 0" guard --
+  # awk compares a non-numeric string to 0 as a STRING, so the guard is false and the division goes
+  # fatal -- and sleep is then handed awk's error text once per table. Validate it the same way the
+  # copy tunables are validated.
+  case "$rate" in
+    ''|.|*[!0-9.]*|*.*.*)
+      log "ERROR" "$log_step" "Invalid NFD_STAGING_SR_RATE_MB='${NFD_STAGING_SR_RATE_MB}'; falling back to 25."
+      rate=25
+      ;;
+  esac
+  local like_prefix
+  like_prefix=$(printf '%s' "$tbl_prefix" | sed 's/[_%]/\\&/g')
+
+  log "INFO" "$log_step" "Search-replace ${from_url} -> ${to_url} (per-table, rate=${rate}MB/s)"
+
+  local rows
+  rows=$(wp db query "SELECT TABLE_NAME, ROUND((DATA_LENGTH+INDEX_LENGTH)/1048576,2) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE' AND TABLE_NAME LIKE '${like_prefix}%' ESCAPE '\\\\' ORDER BY TABLE_NAME;" \
+    --skip-column-names --path="$wp_path" --skip-themes --skip-plugins --quiet 2>&1)
+  if [ $? -ne 0 ]; then
+    log "ERROR" "$log_step" "Unable to list tables for search-replace: $rows"
+    return 1
+  fi
+
+  local name mb out sleep_s
+  while IFS=$'\t' read -r name mb; do
+    [ -z "$name" ] && continue
+    # --all-tables: operate on the named table even when it is not one WP-CLI registers by default
+    # (custom/plugin tables); without it, an explicit non-core table name is rejected.
+    out=$(wp search-replace "$from_url" "$to_url" "$name" --all-tables --path="$wp_path" --skip-themes --skip-plugins --quiet 2>&1)
+    if [ $? -ne 0 ] || printf '%s' "$out" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+      log "ERROR" "$log_step" "search-replace failed on $name: $out"
+      return 1
+    fi
+    if [ "$rate" != "0" ] && [ -n "$mb" ]; then
+      sleep_s=$(awk -v m="$mb" -v r="$rate" 'BEGIN{ if (r <= 0) { print "0"; exit } s = m / r; if (s > 0.1) printf "%.1f", s; else print "0" }')
+      [ "$sleep_s" != "0" ] && sleep "$sleep_s"
+    fi
+  done < <(printf '%s\n' "$rows")
+
+  return 0
+}
+
+# --- Utility: Cleanup failed new content dirs (with logging) ---
+cleanup_failed_new_content_dirs() {
+  local TO="$1"
+  log "INFO" "cleanup_failed_new_content_dirs" "START: Cleaning up failed new content dirs in $TO"
+  for DIR in uploads themes plugins; do
+    local NEW="$TO/wp-content/$DIR-new"
+    if [ -d "$NEW" ]; then
+      log "INFO" "cleanup_failed_new_content_dirs:$DIR" "Attempting to remove $NEW"
+      rm -rf "$NEW"
+      if [ $? -eq 0 ]; then
+        log "INFO" "cleanup_failed_new_content_dirs:$DIR" "Removed $NEW successfully"
+      else
+        log "ERROR" "cleanup_failed_new_content_dirs:$DIR" "Failed to remove $NEW"
+      fi
+    else
+      log "DEBUG" "cleanup_failed_new_content_dirs:$DIR" "No $NEW to remove"
+    fi
+  done
+  log "INFO" "cleanup_failed_new_content_dirs" "END: Cleanup of failed new content dirs in $TO"
+}
+
+# --- Utility: Prepare new content dirs robustly (with logging) ---
+prepare_new_content_dirs() {
+  local FROM="$1"; local TO="$2"
+  # Disable global behaviour `set -e` to mhandle error manually here
+  set +e
+  log "INFO" "prepare_new_content_dirs" "START: Preparing new content dirs from $FROM to $TO"
+
+  # Trap local: do cleanup if function exit with code != 0 and no cleanup has been executed
+  local CLEANED=0
+  _do_cleanup() {
+    if [ "$CLEANED" -eq 0 ]; then
+      log "DEBUG" "prepare_new_content_dirs" "Auto-invoking cleanup_failed_new_content_dirs due to unexpected exit"
+      cleanup_failed_new_content_dirs "$TO"
+      CLEANED=1
+    fi
+  }
+  trap '_do_cleanup' EXIT
+
+  for DIR in uploads themes plugins; do
+    local SRC="$FROM/wp-content/$DIR"
+    local DEST="$TO/wp-content/$DIR-new"
+    log "INFO" "prepare_new_content_dirs:$DIR" "Preparing to copy $SRC to $DEST"
+
+    # Clean destination
+    log "INFO" "prepare_new_content_dirs:$DIR" "Cleaning destination dir: removing $DEST"
+    rm -rf "$DEST"
+    if [ $? -ne 0 ]; then
+      log "ERROR" "prepare_new_content_dirs:$DIR" "Unable to remove $DEST"
+      _do_cleanup
+      trap cleanup EXIT
+      return 1
+    fi
+
+    # Create destination
+    log "INFO" "prepare_new_content_dirs:$DIR" "Creating destination: $DEST"
+    mkdir -p "$DEST"
+    if [ $? -ne 0 ]; then
+      log "ERROR" "prepare_new_content_dirs:$DIR" "Unable to create $DEST"
+      _do_cleanup
+      trap cleanup EXIT
+      return 1
+    fi
+
+    # Copy if source has content
+    if [ -d "$SRC" ] && [ "$(ls -A "$SRC" 2>/dev/null)" ]; then
+      log "INFO" "prepare_new_content_dirs:$DIR" "Copying to $DEST"
+      log "DEBUG" "prepare_new_content_dirs:$DIR" "Command: rsync -r --exclude=.git $SRC/ $DEST"
+      RSYNC_OUTPUT=$(rsync -r --exclude=.git "$SRC/" "$DEST" 2>&1)
+      RSYNC_EXIT=$?
+      log "DEBUG" "prepare_new_content_dirs:$DIR" "rsync exit code: $RSYNC_EXIT"
+
+      if [ -n "$RSYNC_OUTPUT" ]; then
+        log "ERROR" "prepare_new_content_dirs:$DIR" "Output rsync:"
+        while IFS= read -r line; do
+          log "ERROR" "prepare_new_content_dirs:$DIR" "RSYNC: $line"
+        done <<< "$RSYNC_OUTPUT"
+      fi
+
+     if [ $RSYNC_EXIT -ne 0 ]; then
+        PERM_DENIED_FILE=$(echo "$RSYNC_OUTPUT" | grep "Permission denied" | awk -F'open \"' '{print $2}' | awk -F'\"' '{print $1}' | head -n1)
+        if [ -n "$PERM_DENIED_FILE" ]; then
+          log "ERROR" "prepare_new_content_dirs:$DIR" "Permission denied on file: $PERM_DENIED_FILE"
+          # List of patterns to ignore
+          SKIP_ERROR=0
+          for PATTERN in "${IGNORE_PATTERNS[@]}"; do
+            if [[ "$PERM_DENIED_FILE" == *"$PATTERN"* ]]; then
+              SKIP_ERROR=1
+              break
+            fi
+          done
+
+          if [ $SKIP_ERROR -eq 1 ]; then
+            log "INFO" "prepare_new_content_dirs:$DIR" "Ignored permission denied on $PERM_DENIED_FILE (matched ignore pattern)"
+          else
+            log "DEBUG" "prepare_new_content_dirs:$DIR" "Invoking cleanup_failed_new_content_dirs with TO=$TO due to rsync failure"
+            _do_cleanup
+            trap cleanup EXIT
+            return 1
+          fi
+        else
+          log "ERROR" "prepare_new_content_dirs:$DIR" "Unable to copy $DIR folder (rsync failed)."
+          log "DEBUG" "prepare_new_content_dirs:$DIR" "Invoking cleanup_failed_new_content_dirs with TO=$TO due to rsync failure"
+          _do_cleanup
+          trap cleanup EXIT
+          return 1
+        fi
+      fi
+
+      log "INFO" "prepare_new_content_dirs:$DIR" "Rsync completed with success."
+    else
+      log "INFO" "prepare_new_content_dirs:$DIR" "No files to copy in $DIR, skipping rsync."
+    fi
+
+    log "DEBUG" "prepare_new_content_dirs:$DIR" "Post-copy permissions: $(ls -ld "$DEST")"
+  done
+
+  # Success: restore global cleanup (releases staging lock on script exit)
+  CLEANED=1
+  trap cleanup EXIT
+  log "INFO" "prepare_new_content_dirs" "END: Finished preparing new content dirs from $FROM to $TO"
+  return 0
+}
+
+# --- Utility: Finalize new content dirs (with logging) ---
+finalize_new_content_dirs() {
+  local TO="$1"; local ON_ERROR="$2"
+  log "INFO" "finalize_new_content_dirs" "START: Finalizing new content dirs in $TO"
+  for DIR in uploads themes plugins; do
+    local ORIG="$TO/wp-content/$DIR"
+    local NEW="$TO/wp-content/$DIR-new"
+    log "INFO" "finalize_new_content_dirs:$DIR" "Preparing to remove $ORIG"
+    if [ -d "$ORIG" ]; then
+      rm -rf "$ORIG" || { log "ERROR" "finalize_new_content_dirs:$DIR" "Failed to remove $ORIG"; [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Unable to remove $DIR directory during finalize."; }
+      log "INFO" "finalize_new_content_dirs:$DIR" "Removed old $ORIG"
+    else
+      log "INFO" "finalize_new_content_dirs:$DIR" "No existing $ORIG to remove"
+    fi
+    log "INFO" "finalize_new_content_dirs:$DIR" "Renaming $NEW to $ORIG"
+    mv "$NEW" "$ORIG" || { log "ERROR" "finalize_new_content_dirs:$DIR" "Failed to move $NEW to $ORIG"; [ -n "$ON_ERROR" ] && eval "$ON_ERROR" || error "Unable to finalize $DIR-new folder."; }
+    log "INFO" "finalize_new_content_dirs:$DIR" "Moved $NEW to $ORIG"
+    log "DEBUG" "finalize_new_content_dirs:$DIR" "Permissions after move: $(ls -ld "$ORIG")"
+  done
+  log "INFO" "finalize_new_content_dirs" "END: Finalized new content dirs in $TO"
+}
+
+# --- Main Functions ---
+create() {
+  log "INFO" "create" "[STEP] Start."
+
+  # Move to production directory
+  log "INFO" "create" "[STEP] Move to production directory."
+  set +e
+  cd "$PRODUCTION_DIR"
+  CD_STATUS=$?
+  set -e
+  log "DEBUG" "create:cd_prod" "cd exit code: $CD_STATUS"
+  if [ $CD_STATUS -ne 0 ]; then
+    log "ERROR" "create:cd_prod" "Unable to move to production directory."
+    error 'Unable to move to production directory.'
+  fi
+
+  # Get WP Version
+  log "INFO" "create" "[STEP] Get WP Version."
+  set +e
+  WP_VER=$(wp core version 2>/dev/null | tr -d '\n')
+  WP_VER_STATUS=$?
+  set -e
+  log "DEBUG" "create:wp_version" "wp core version exit code: $WP_VER_STATUS"
+  if [ $WP_VER_STATUS -ne 0 ]; then
+    log "ERROR" "create:wp_version" "Output: $WP_VER"
+    error 'Unable to get WP version.'
+  fi
+
+  # Create staging directory
+  log "INFO" "create" "[STEP] Create staging directory."
+  set +e
+  mkdir -p "$STAGING_DIR"
+  MKDIR_STATUS=$?
+  set -e
+  log "DEBUG" "create:mkdir" "mkdir exit code: $MKDIR_STATUS"
+  if [ $MKDIR_STATUS -ne 0 ] || [ ! -d "$STAGING_DIR" ]; then
+    log "ERROR" "create:mkdir" "Unable to create staging directory."
+    delete_temp_staging 1 "Unable to create staging directory."
+  fi
+
+  # Export SCHEMA ONLY (no row data, no triggers) via the dump binary directly. Row data is copied
+  # server-side after the schema import; the schema dump is a few KB.
+  log "INFO" "create" "[STEP] Export database schema."
+  if ! dump_schema_only "$STAGING_DIR/.export-sql" "create:db_export" "$PRODUCTION_DIR" "$PRODUCTION_TABLES"; then
+    delete_temp_staging 1 "Unable to export database schema."
+  fi
+
+  # Set env prod
+  log "INFO" "create" "[STEP] Set env prod."
+  set +e
+  ENV_OUTPUT=$(wp option update staging_environment production --skip-themes --skip-plugins --quiet 2>&1)
+  ENV_STATUS=$?
+  set -e
+  log "DEBUG" "create:set_env_prod" "wp option update exit code: $ENV_STATUS"
+  if [ -n "$ENV_OUTPUT" ]; then
+    log "ERROR" "create:set_env_prod" "Output: $ENV_OUTPUT"
+  fi
+  if [ $ENV_STATUS -ne 0 ]; then
+    delete_temp_staging 1 "Unable to set environment."
+  fi
+
+  # Move to staging directory
+  log "INFO" "create" "[STEP] Move to staging directory."
+  set +e
+  cd "$STAGING_DIR"
+  CD2_STATUS=$?
+  set -e
+  log "DEBUG" "create:cd_staging" "cd exit code: $CD2_STATUS"
+  if [ $CD2_STATUS -ne 0 ]; then
+    delete_temp_staging 2 "Unable to move to staging directory."
+  fi
+
+  # Move WP Content dir
+  log "INFO" "create" "[STEP] Move WP Content dir."
+  move_content_dirs "$PRODUCTION_DIR" "$STAGING_DIR" "delete_temp_staging 4 'Unable to move content dirs.'"
+
+  # Core download/check symlink
+  log "INFO" "create" "[STEP] Core download/check symlink."
+  if [ -L "$PRODUCTION_DIR/index.php" ]; then
+    echo "path=$STAGING_DIR" > /nfssys/etc/wp_symink_watch/$(whoami).notify
+    echo "SetEnv WP_ABSPATH $STAGING_DIR" > .htaccess
+  else
+    set +e
+    CORE_OUTPUT=$(wp core download --version="$WP_VER" --force 2>&1)
+    CORE_STATUS=$?
+    set -e
+    log "DEBUG" "create:core_download" "wp core download exit code: $CORE_STATUS"
+    if [ -n "$CORE_OUTPUT" ]; then
+      log "ERROR" "create:core_download" "Output: $CORE_OUTPUT"
+    fi
+    if [ $CORE_STATUS -ne 0 ]; then
+      delete_temp_staging 2 "Unable to install WordPress in staging directory."
+    fi
+    sync_php_ai_client "$PRODUCTION_DIR" "$STAGING_DIR" "delete_temp_staging 2 'Unable to sync php-ai-client.'"
+  fi
+
+  # Set core config
+  log "INFO" "create" "[STEP] Set core config."
+  log "DEBUG" "create:core_config" "Comando: wp core config --dbhost=*** --dbname=*** --dbuser=*** --dbpass=*** --dbprefix=*** --skip-themes --skip-plugins --quiet"
+  set +e
+  CONFIG_OUTPUT=$(wp core config --dbhost="$DB_HOST" --dbname="$DB_NAME" --dbuser="$DB_USER" --dbpass="$DB_PASS" --dbprefix="staging_$DB_PREFIX" --skip-themes --skip-plugins --quiet 2>&1)
+  CONFIG_STATUS=$?
+  set -e
+  log "DEBUG" "create:core_config" "wp core config exit code: $CONFIG_STATUS"
+  if [ -n "$CONFIG_OUTPUT" ]; then
+    log "ERROR" "create:core_config" "Output: $CONFIG_OUTPUT"
+  fi
+  if [ $CONFIG_STATUS -ne 0 ]; then
+    delete_temp_staging 2 "Unable to configure WordPress."
+  fi
+
+  # Rewrite production -> staging prefixes (and strip DEFINER) in the schema-only dump.
+  log "INFO" "create" "[STEP] Update prefix SQL."
+  if [ ! -f "$STAGING_DIR/.export-sql" ]; then
+    log "ERROR" "create:update_prefix_sql" "SQL export file not found: $STAGING_DIR/.export-sql"
+    delete_temp_staging 2 "SQL export file not found."
+  fi
+  if ! rewrite_dump_prefixes "$STAGING_DIR/.export-sql" "$DB_PREFIX" "staging_$DB_PREFIX" "staging_" 1 "$PRODUCTION_TABLES"; then
+    log "ERROR" "create:update_prefix_sql" "Unable to update database prefix."
+    delete_temp_staging 2 "Unable to update database prefix."
+  fi
+
+  log "INFO" "create:update_prefix_sql" "Normalizing/uniquifying constraint names for staging"
+  if ! normalize_fk_names "$STAGING_DIR/.export-sql" "create:update_prefix_sql" "staging_"; then
+    log "ERROR" "create:update_prefix_sql" "Unable to normalize constraint names."
+    delete_temp_staging 2 "Unable to normalize constraint names."
+  fi
+
+  # Import the schema only (tiny). Row data is copied server-side afterwards; reimporting a full
+  # dump here used to stream the whole database through the client as bytes_received, tripping the
+  # host MySQL abuse throttle on larger sites (RCA: DEVSUP-149696).
+  log "INFO" "create" "[STEP] Import database schema."
+  local import_charset
+  import_charset=$(resolve_db_charset "$STAGING_DIR")
+  set +e
+  IMPORT_OUTPUT=$(wp db import "$STAGING_DIR/.export-sql" --default-character-set="$import_charset" --skip-themes --skip-plugins --quiet 2>&1)
+  IMPORT_STATUS=$?
+  set -e
+  log "DEBUG" "create:db_import" "wp db import (schema) exit code: $IMPORT_STATUS"
+  if [ $IMPORT_STATUS -ne 0 ] || echo "$IMPORT_OUTPUT" | grep -qE "ERROR [0-9]+ \(.*\)"; then
+    while IFS= read -r line; do
+      [ "$line" != "0" ] && [ -n "$line" ] && log "ERROR" "create:db_import" "Output: $line"
+    done <<< "$IMPORT_OUTPUT"
+    delete_temp_staging 3 "Unable to import database schema."
+  fi
+
+  # Copy row data server-side (INSERT ... SELECT within the shared database).
+  log "INFO" "create" "[STEP] Copy table data."
+  if ! copy_table_data_server_side "$PRODUCTION_DIR" "$DB_PREFIX" "staging_$DB_PREFIX" "create:copy_data" "$PRODUCTION_TABLES"; then
+    delete_temp_staging 3 "Unable to copy table data to staging."
+  fi
+
+  # Copy triggers last, after the data is in place.
+  log "INFO" "create" "[STEP] Copy triggers."
+  if ! copy_triggers "$PRODUCTION_DIR" "$STAGING_DIR" "$PRODUCTION_TABLES" "$DB_PREFIX" "staging_$DB_PREFIX" "staging_" "create:copy_triggers"; then
+    delete_temp_staging 3 "Unable to copy triggers to staging."
+  fi
+
+  # Rename before any WP-CLI command boots WordPress (otherwise default staging_wp_user_roles is created and blocks rename).
+  log "INFO" "create" "[STEP] Rename prefix-dependent keys in staging DB"
+  if ! rename_prefixed_keys_to_staging "$STAGING_DIR" "create:rename_prefixed_keys"; then
+    delete_temp_staging 3 "Unable to rename prefix-dependent keys in staging DB."
+  fi
+
+  # Delete SQL export
+  log "INFO" "create" "[STEP] Delete SQL export."
+  log "DEBUG" "create:delete_sql_export" "Before of rm $STAGING_DIR/.export-sql"
+  set +e
+  rm "$STAGING_DIR/.export-sql" --force > /dev/null 2>&1
+  RM_STATUS=$?
+  set -e
+  log "DEBUG" "create:delete_sql_export" "rm exit code: $RM_STATUS"
+  if [ $RM_STATUS -ne 0 ]; then
+    log "ERROR" "create:delete_sql_export" "Unable to delete SQL export file."
+    delete_temp_staging 3 "Unable to delete SQL export file."
+  fi
+  log "DEBUG" "create:after_delete_sql_export" "After cancelling of SQL file"
+
+  log "DEBUG" "create:before_set_env_staging" "Before set env staging"
+  # Set env staging
+  log "INFO" "create" "[STEP] Set env staging."
+  set +e
+  ENV2_OUTPUT=$(wp option update staging_environment staging --skip-themes --skip-plugins --quiet 2>&1)
+  ENV2_STATUS=$?
+  set -e
+  log "DEBUG" "create:set_env_staging" "wp option update exit code: $ENV2_STATUS"
+  if [ -n "$ENV2_OUTPUT" ]; then
+    log "ERROR" "create:set_env_staging" "Output: $ENV2_OUTPUT"
+  fi
+  if [ $ENV2_STATUS -ne 0 ]; then
+    delete_temp_staging 3 "Unable to set environment."
+  fi
+  log "DEBUG" "create:after_set_env_staging" "Completed set env staging"
+
+  # set WP_ENVIRONMENT_TYPE to staging in wp-config.php
+  log "DEBUG" "create:before_set_env_staging_wpconfig" "Before set WP_ENVIRONMENT_TYPE staging in wp-config.php"
+  set +e
+  ENV3_OUTPUT=$(wp config set WP_ENVIRONMENT_TYPE staging --type=constant --quiet --skip-themes --skip-plugins --path="$STAGING_DIR" 2>&1)
+  ENV3_STATUS=$?
+  set -e
+  log "DEBUG" "create:set_env_staging_wpconfig" "wp config set exit code: $ENV3_STATUS"
+  if [ -n "$ENV3_OUTPUT" ]; then
+    log "ERROR" "create:set_env_staging" "Output: $ENV3_OUTPUT"
+  fi
+  log "DEBUG" "create:set_env_staging_wpconfig" "Complete set WP_ENVIRONMENT_TYPE staging"
+
+  log "DEBUG" "create:before_search_replace" "Starting search replace URLs"
+  # Search replace URLs
+  log "INFO" "create" "[STEP] Search replace URLs."
+  set +e
+  search_replace_paced "$STAGING_DIR" "$PRODUCTION_URL" "$STAGING_URL" "create:search_replace" "staging_$DB_PREFIX"
+  SR_STATUS=$?
+  set -e
+  log "DEBUG" "create:search_replace" "search_replace_paced exit code: $SR_STATUS"
+  if [ $SR_STATUS -ne 0 ]; then
+    delete_temp_staging 4 "Unable to update URLs on staging."
+  fi
+  log "DEBUG" "create:after_search_replace" "Completed search replace URLs"
+
+  log "DEBUG" "create:before_import_config" "Starting import config"
+  # Import config
+  log "INFO" "create" "[STEP] Import config."
+  set +e
+  STAGING_CONFIG_JSON=$(wp option get staging_config --format=json --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet 2>/dev/null)
+  CONFIG2_OUTPUT=$(wp option update staging_config "$STAGING_CONFIG_JSON" --format=json --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet 2>&1)
+  CONFIG2_STATUS=$?
+  set -e
+  log "DEBUG" "create:import_config" "wp option update exit code: $CONFIG2_STATUS"
+  if [ -n "$CONFIG2_OUTPUT" ]; then
+    log "ERROR" "create:import_config" "Output: $CONFIG2_OUTPUT"
+  fi
+  if [ $CONFIG2_STATUS -ne 0 ]; then
+    delete_temp_staging 4 "Unable to import global config on staging."
+  fi
+  log "DEBUG" "create:after_import_config" "Import config completed"
+
+  log "DEBUG" "create:before_coming_soon" "Starting coming soon ON"
+  # Coming soon ON
+  log "INFO" "create" "[STEP] Coming soon ON."
+  set +e
+  CS_OUTPUT=$(wp option update nfd_coming_soon 'true' --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet 2>&1)
+  CS_STATUS=$?
+  set -e
+  log "DEBUG" "create:coming_soon" "wp option update exit code: $CS_STATUS"
+  if [ -n "$CS_OUTPUT" ]; then
+    log "ERROR" "create:coming_soon" "Output: $CS_OUTPUT"
+  fi
+  if [ $CS_STATUS -ne 0 ]; then
+    delete_temp_staging 4 "Unable to turn on Coming Soon page in staging."
+  fi
+  log "DEBUG" "create:after_coming_soon" "Completed coming soon ON"
+
+  log "DEBUG" "create:before_flush_rewrite" "Starting flush rewrite"
+  # Flush rewrite
+  log "INFO" "create" "[STEP] Flush rewrite."
+  set +e
+  RF_OUTPUT=$(wp rewrite flush --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet 2>&1)
+  RF_STATUS=$?
+  set -e
+  log "DEBUG" "create:rewrite_flush" "wp rewrite flush exit code: $RF_STATUS"
+  if [ -n "$RF_OUTPUT" ]; then
+    log "ERROR" "create:rewrite_flush" "Output: $RF_OUTPUT"
+  fi
+  if [ $RF_STATUS -ne 0 ]; then
+    delete_temp_staging 5 "Unable to flush rewrite rules."
+  fi
+  log "DEBUG" "create:after_flush_rewrite" "Completed flush rewrite"
+
+  log "DEBUG" "create:before_rewrite_htaccess" "Starting rewrite htaccess"
+  # Rewrite htaccess
+  log "INFO" "create" "[STEP] Rewrite htaccess."
+  set +e
+  HTA_OUTPUT=$(rewrite_htaccess "$STAGING_DIR" 2>&1)
+  HTA_STATUS=$?
+  set -e
+  log "DEBUG" "create:rewrite_htaccess" "rewrite_htaccess exit code: $HTA_STATUS"
+  if [ -n "$HTA_OUTPUT" ]; then
+    log "ERROR" "create:rewrite_htaccess" "Output: $HTA_OUTPUT"
+  fi
+  if [ $HTA_STATUS -ne 0 ]; then
+    delete_temp_staging 5 "Unable to rewrite .htaccess."
+  fi
+  log "DEBUG" "create:after_rewrite_htaccess" "Completed rewrite htaccess"
+
+  log "SUCCESS" "create:end" "Staging website created successfully."
+  log "DEBUG" "create:final_echo" "Starting print of final JSON"
+  echo '{"status":"success","message":"Staging website created successfully.","reload":"true"}'
+  log "DEBUG" "create:final_echo" "JSON printed"
+}
+
+destroy() {
+  log "INFO" "destroy" "[STEP] Start destroy."
+  log "INFO" "destroy" "[STEP] Move to production directory."
+  cd "$PRODUCTION_DIR" || error 'Unable to move to production directory.'
+  if test -d "$STAGING_DIR"; then
+    log "INFO" "destroy" "[STEP] Drop views and tables in $STAGING_DIR."
+    drop_views_and_tables "$STAGING_DIR"
+    log "INFO" "destroy" "[STEP] Dropped views and tables."
+    log "INFO" "destroy" "[STEP] Delete staging_environment option."
+    run_or_fail "destroy:delete_env" "Unable to reset staging environment in production." wp option delete staging_environment --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+    log "INFO" "destroy" "[STEP] Deleted staging_environment option."
+    log "INFO" "destroy" "[STEP] Delete staging_config option."
+    run_or_fail "destroy:delete_config" "Unable to remove global staging config." wp option delete staging_config --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+    log "INFO" "destroy" "[STEP] Deleted staging_config option."
+    log "INFO" "destroy" "[STEP] Remove staging directory $STAGING_DIR."
+    run_or_fail "destroy:rm_dir" "Unable to remove staging files." rm -r "$STAGING_DIR" --force
+    log "INFO" "destroy" "[STEP] Removed staging directory."
+    log "INFO" "destroy" "[STEP] Creating file index.php in the staging directory"
+       mkdir -p $STAGING_DIR
+       printf "%s" "<?php header('Location: $PRODUCTION_URL', true, 302); exit; ?>" > "$STAGING_DIR/index.php"
+        log "INFO" "destroy" "[STEP] File index.php has been created"
+    log "INFO" "destroy" "[STEP] Created file index.php on staging site directory"
+    log "SUCCESS" "destroy:end" "Staging website destroyed."
+    echo '{"status":"success","message":"Staging website destroyed.","reload":"true"}'
+  else
+    log "INFO" "destroy:skip" "Staging directory does not exist, nothing to destroy."
+    echo '{"status":"success","message":"Staging directory does not exist, nothing to destroy."}'
+  fi
+  log "INFO" "destroy" "[STEP] End destroy."
+}
+
+sso_staging() {
+
+  log "DEBUG" "SSO staging"
+  # Prefer explicit function_param (from switchTo), then USER_ID from the current request.
+  local SSO_USER_ID="${11:-$USER_ID}"
+  if [ -z "$SSO_USER_ID" ] || [ "$SSO_USER_ID" = "0" ]; then
+    error 'No user provided.'
+  fi
+
+  WP_CONFIG="$STAGING_DIR/wp-config.php"
+
+  DB_NAME=$(grep DB_NAME "$WP_CONFIG" | cut -d \' -f 4)
+  DB_USER=$(grep DB_USER "$WP_CONFIG" | cut -d \' -f 4)
+  DB_PASS=$(grep DB_PASSWORD "$WP_CONFIG" | cut -d \' -f 4)
+  TABLE_PREFIX=$(grep '^\$table_prefix' "$WP_CONFIG" | cut -d \' -f 2)
+
+  DB_HOST_RAW=$(grep DB_HOST "$WP_CONFIG" | cut -d \' -f 4)
+
+  # split host and port if exists (eg. localhost:3306) It's needed because mysql cli needs -P parameter for port
+  if [[ "$DB_HOST_RAW" == *:* ]]; then
+    DB_HOST=$(echo "$DB_HOST_RAW" | cut -d: -f1)
+    DB_PORT=$(echo "$DB_HOST_RAW" | cut -d: -f2)
+  else
+    DB_HOST="$DB_HOST_RAW"
+    DB_PORT=""
+  fi
+
+  # build sql parameters
+  MYSQL_CMD=(mysql -u "$DB_USER" -p"$DB_PASS" -h "$DB_HOST")
+  if [ -n "$DB_PORT" ]; then
+    MYSQL_CMD+=(-P "$DB_PORT")
+  fi
+  MYSQL_CMD+=(-D "$DB_NAME" -N -s)
+
+  ACTIVE_PLUGINS=$("${MYSQL_CMD[@]}" -e \
+    "SELECT option_value FROM ${TABLE_PREFIX}options WHERE option_name = 'active_plugins';")
+
+  if ! echo "$ACTIVE_PLUGINS" | grep -q "$PLUGIN_SLUG"; then
+      log "ERROR" "sso_staging" "$PLUGIN_NAME is not installed or not active."
+      error "$PLUGIN_NAME is missing from the staging site. Please install it to continue"
+  fi
+
+  log "INFO" "sso_staging" "Removing existing sso.php if present"
+  run_or_fail "sso_staging:eval" "Unable to remove sso.php" \
+    wp eval 'file_exists( WPMU_PLUGIN_DIR . "/sso.php" ) ? unlink( WPMU_PLUGIN_DIR . "/sso.php" ) : null;' \
+    --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet
+
+  log "INFO" "sso_staging" "Requesting SSO link from wp newfold sso for user $SSO_USER_ID"
+
+  # Deliberately `command wp`, not the wrapper: SSO_CLI stores its token with set_transient(), which
+  # follows wp_using_ext_object_cache(). Skipping the drop-in would put the token in wp_options while
+  # the web request that redeems the link looks in the object cache, failing every SSO login and
+  # counting each one towards the module's lockout. The URL is matched out of the stream rather than
+  # taken by line position so drop-in noise cannot be mistaken for it, and an empty result falls
+  # through to the guard below. Nothing here reaches the script's own stdout, so the JSON contract
+  # with Staging::runCommand() is unaffected either way.
+  LINK=$(command wp newfold sso --url-only --id="$SSO_USER_ID" --path="$STAGING_DIR" 2> >(while read -r line; do log "ERROR" "sso_staging" "$line"; done) | grep -Eo 'https?://[^[:space:]]*admin-ajax\.php[^[:space:]]*' | tail -n 1)
+
+  # Remove newline (\n), carriage return (\r)
+  LINK="${LINK//$'\n'/}"
+  LINK="${LINK//$'\r'/}"
+
+  # Remove UTF-8 BOM via tr (fast)
+  LINK="$(printf '%s' "$LINK" | tr -d '\357\273\277')"
+
+  # If still contains BOM (or tr failed), fallback to perl
+  # (this removes the Unicode codepoint U+FEFF anywhere)
+  LINK="$(printf '%s' "$LINK" | perl -CS -pe 's/\x{FEFF}//g')"
+
+  if [ -z "$LINK" ]; then
+    log "ERROR" "sso_staging" "Failed to generate SSO link (empty response)"
+    error "Unable to create SSO link for staging."
+  fi
+
+  log "SUCCESS" "sso_staging" "SSO to staging successful for user $SSO_USER_ID."
+
+  echo '{"status":"success","load_page":"'"$LINK"'&redirect=admin.php?page=nfd-staging"}'
+}
+
+sso_production() {
+  log "DEBUG" "SSO Production"
+  # Prefer explicit function_param (from switchTo), then USER_ID from the current request.
+  local SSO_USER_ID="${11:-$USER_ID}"
+  if [ -z "$SSO_USER_ID" ] || [ "$SSO_USER_ID" = "0" ]; then
+    error 'No user provided.'
+  fi
+  wp eval 'file_exists( WPMU_PLUGIN_DIR . "/sso.php" ) ? unlink( WPMU_PLUGIN_DIR . "/sso.php" ) : null;' --path=$PRODUCTION_DIR --skip-themes --skip-plugins --quiet
+  # Deliberately `command wp`, not the wrapper: SSO_CLI stores its token with set_transient(), which
+  # follows wp_using_ext_object_cache(). Skipping the drop-in would put the token in wp_options while
+  # the web request that redeems the link looks in the object cache, failing every SSO login and
+  # counting each one towards the module's lockout. The URL is matched out of the stream rather than
+  # taken by line position so drop-in noise cannot be mistaken for it, and an empty result falls
+  # through to the guard below. Nothing here reaches the script's own stdout, so the JSON contract
+  # with Staging::runCommand() is unaffected either way.
+  LINK=$(command wp newfold sso --url-only --id="$SSO_USER_ID" --path="$PRODUCTION_DIR" 2> >(while read -r line; do log "ERROR" "sso_production" "$line"; done) | grep -Eo 'https?://[^[:space:]]*admin-ajax\.php[^[:space:]]*' | tail -n 1)
+
+  # Remove newline (\n) e carriage return (\r) characters from the link
+  LINK="${LINK//$'\n'/}"
+  LINK="${LINK//$'\r'/}"
+
+  # Remove UTF-8 BOM via tr (fast)
+  LINK="$(printf '%s' "$LINK" | tr -d '\357\273\277')"
+
+  # If still contains BOM (or tr failed), fallback to perl
+  # (this removes the Unicode codepoint U+FEFF anywhere)
+  LINK="$(printf '%s' "$LINK" | perl -CS -pe 's/\x{FEFF}//g')"
+
+  if [ -z "$LINK" ]; then
+    log "ERROR" "sso_production" "Failed to generate SSO link (empty response)"
+    error "Unable to create SSO link for production."
+  fi
+
+  log "SUCCESS" "sso_production" "SSO to production successful for user $SSO_USER_ID."
+  echo '{"status":"success","load_page":"'$LINK'&redirect=admin.php?page=nfd-staging"}'
+}
+
+clone() {
+  cd "$PRODUCTION_DIR" || error 'Unable to move to production directory.'
+  trap 'delete_temp_staging 5 "Clone failed unexpectedly."' ERR
+
+  log "DEBUG" "clone:before_get_sessions" "About to fetch session tokens if user ID is set"
+  if [ "0" != "$USER_ID" ]; then
+    log "INFO" "clone:get_sessions" "Fetching session tokens for user $USER_ID"
+    set +e
+    SESSIONS=$(wp user meta get "$USER_ID" session_tokens --format=json --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet 2>&1)
+    STATUS=$?
+    set -e
+    log "DEBUG" "clone:get_sessions" "Exit code: $STATUS"
+    if [ $STATUS -ne 0 ]; then
+      log "ERROR" "clone:get_sessions" "Failed to fetch session tokens. Output: $SESSIONS"
+      SESSIONS=""
+    fi
+  fi
+
+  # Drop views and tables
+  drop_views_and_tables "$STAGING_DIR"
+  # Export SCHEMA ONLY (no row data, no triggers) via the dump binary directly; the dump is a few
+  # KB. Row data is copied server-side below. Triggers are copied last so they do not fire during
+  # the data copy.
+  if ! dump_schema_only "$STAGING_DIR/.export-sql" "clone:db_export" "$PRODUCTION_DIR" "$PRODUCTION_TABLES"; then
+    error "Unable to export database schema."
+  fi
+
+  # Rewrite production -> staging table/constraint/trigger prefixes (and strip DEFINER) in the dump.
+  log "INFO" "clone:rewrite_prefix" "Rewriting table prefixes in schema dump"
+  if ! rewrite_dump_prefixes "$STAGING_DIR/.export-sql" "$DB_PREFIX" "staging_$DB_PREFIX" "staging_" 1 "$PRODUCTION_TABLES"; then
+    log "ERROR" "clone:rewrite_prefix" "Unable to update database prefix."
+    delete_temp_staging 2 "Unable to update database prefix."
+  fi
+
+  log "INFO" "clone:normalize_constraint" "Normalizing/uniquifying constraint names for staging"
+  if ! normalize_fk_names "$STAGING_DIR/.export-sql" "clone:normalize_constraint" "staging_"; then
+    log "ERROR" "clone:normalize_constraint" "Unable to normalize constraint names."
+    delete_temp_staging 2 "Unable to normalize constraint names."
+  fi
+
+  cd "$STAGING_DIR" || delete_temp_staging 5 "Unable to move to staging directory."
+  local import_charset
+  import_charset=$(resolve_db_charset "$STAGING_DIR")
+  # Import the schema only (tiny). Reimporting a full dump here used to stream the whole database
+  # back through the client as bytes_received, which tripped the host MySQL abuse throttle and
+  # failed the clone on larger sites (RCA: DEVSUP-149696).
+  run_or_fail "clone:db_import_schema" "Unable to import database schema." wp db import "$STAGING_DIR/.export-sql" --default-character-set="$import_charset" --skip-themes --skip-plugins --quiet
+
+  # Copy row data server-side (INSERT ... SELECT within the shared database): no row bytes cross
+  # the client connection, so this scales with site size instead of tripping the throttle.
+  if ! copy_table_data_server_side "$PRODUCTION_DIR" "$DB_PREFIX" "staging_$DB_PREFIX" "clone:copy_data" "$PRODUCTION_TABLES"; then
+    error "Unable to copy table data to staging."
+  fi
+
+  # Triggers last, after the data is in place.
+  if ! copy_triggers "$PRODUCTION_DIR" "$STAGING_DIR" "$PRODUCTION_TABLES" "$DB_PREFIX" "staging_$DB_PREFIX" "staging_" "clone:copy_triggers"; then
+    error "Unable to copy triggers to staging."
+  fi
+  log "INFO" "clone" "[STEP] Rename prefix-dependent keys in staging DB"
+  if ! rename_prefixed_keys_to_staging "$STAGING_DIR" "clone:rename_prefixed_keys"; then
+    delete_temp_staging 3 "Unable to rename prefix-dependent keys in staging DB."
+  fi
+   if [ "0" != "$USER_ID" ]; then
+     wp user meta update $USER_ID session_tokens "$SESSIONS" --format=json --skip-themes --skip-plugins --quiet
+   fi
+  log "DEBUG" "clone:set_env_staging" "Before set_env_staging"
+  run_or_fail "clone:set_env_staging" "Unable to set environment." wp option update staging_environment staging --skip-themes --skip-plugins --quiet
+  log "DEBUG" "clone:set_env_staging" "After set_env_staging"
+  move_content_dirs "$PRODUCTION_DIR" "$STAGING_DIR"
+  if [ -L "$PRODUCTION_DIR/index.php" ]; then
+    echo "path=$STAGING_DIR" > /nfssys/etc/wp_symink_watch/$(whoami).notify
+  else
+    WP_VER=$(wp core version)
+    run_or_fail "clone:core_download" "Unable to install WordPress in staging directory." wp core download --version="$WP_VER" --force
+    sync_php_ai_client "$PRODUCTION_DIR" "$STAGING_DIR"
+  fi
+  if ! search_replace_paced "$STAGING_DIR" "$PRODUCTION_URL" "$STAGING_URL" "clone:search_replace" "staging_$DB_PREFIX"; then
+    error "Unable to update URLs on staging."
+  fi
+  run_or_fail "clone:import_config" "Unable to import global config on staging." wp option update staging_config "$STAGING_CONFIG_JSON" --format=json --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet
+  run_or_fail "clone:coming_soon" "Unable to turn on Coming Soon page in staging." wp option update nfd_coming_soon 'true' --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet
+  run_or_fail "clone:rewrite_flush" "Unable to flush rewrite rules." wp rewrite flush --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet
+  rm "$STAGING_DIR/.export-sql" --force
+  trap - ERR
+  rewrite_htaccess "$STAGING_DIR"
+  log "DEBUG" "create:before_set_env_staging_wpconfig" "Before set WP_ENVIRONMENT_TYPE staging in wp-config.php"
+  set +e
+  ENV3_OUTPUT=$(wp config set WP_ENVIRONMENT_TYPE staging --type=constant --quiet --skip-themes --skip-plugins --path="$STAGING_DIR" 2>&1)
+  ENV3_STATUS=$?
+  set -e
+  log "DEBUG" "create:set_env_staging_wpconfig" "wp config set exit code: $ENV3_STATUS"
+  if [ -n "$ENV3_OUTPUT" ]; then
+    log "ERROR" "create:set_env_staging" "Output: $ENV3_OUTPUT"
+  fi
+  log "DEBUG" "create:set_env_staging_wpconfig" "Complete set WP_ENVIRONMENT_TYPE staging"
+
+  log "SUCCESS" "clone:end" "Website cloned successfully."
+  echo '{"status":"success","message":"Website cloned successfully."}'
+}
+
+deploy_files() {
+  cd "$STAGING_DIR" || error 'Unable to move to staging directory.'
+  if [ -L "$PRODUCTION_DIR/index.php" ]; then
+    echo "path=$PRODUCTION_DIR" > /nfssys/etc/wp_symink_watch/$(whoami).notify
+  else
+    WP_VER=$(wp core version)
+    run_or_fail "deploy_files:core_download" "Unable to move WordPress files." wp core download --version="$WP_VER" --force --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet
+    sync_php_ai_client "$STAGING_DIR" "$PRODUCTION_DIR"
+  fi
+
+  prepare_new_content_dirs "$STAGING_DIR" "$PRODUCTION_DIR" || {
+    cleanup_failed_new_content_dirs "$PRODUCTION_DIR"
+    error "Unable to prepare new content directories."
+  }
+
+  finalize_new_content_dirs "$PRODUCTION_DIR" || {
+    cleanup_failed_new_content_dirs "$PRODUCTION_DIR"
+    error "Unable to finalize new content directories."
+  }
+
+  log "SUCCESS" "deploy_files:end" "Files deployed successfully."
+  write_deploy_result "success" "Files deployed successfully." "deploy_files"
+  echo '{"status":"success","message":"Files deployed successfully."}'
+}
+
+# Helper: restore from backup and log
+_restore_db_from_backup() {
+  local BACKUP="$1"
+  # A rollback can be reached before the backup exists (an early failure) or after it was found
+  # unusable and removed. Piping an empty path into wp db import would report a confusing gzip
+  # error and read as an attempted-and-failed restore; say plainly that there is nothing to
+  # restore from instead.
+  if [ -z "$BACKUP" ] || [ ! -s "$BACKUP" ]; then
+    log "ERROR" "deploy_db:restore" "No usable backup to restore from. Manual intervention needed."
+    return
+  fi
+  log "INFO" "deploy_db:restore" "Restoring original production database from backup $BACKUP"
+  set +e
+  if gzip -d < "$BACKUP" | wp db import - --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet 2>&1; then
+    log "INFO" "deploy_db:restore" "Database restored successfully from backup."
+  else
+    log "ERROR" "deploy_db:restore" "Failed to restore database from backup. Manual intervention needed."
+  fi
+  set -e
+}
+
+deploy_db() {
+  cd "$STAGING_DIR" || error 'Unable to move to staging directory.'
+
+  # Disable global set -e and handle errors manually
+  set +e
+
+  TIMESTAMP=$(date +%s)
+  COMPRESSED_BACKUP=""
+  RESTORED=0
+
+  # Trap for automatic rollback in case of unexpected exit
+  _on_exit() {
+    rc=$?
+    if [ $rc -ne 0 ] && [ "$RESTORED" -eq 0 ]; then
+      log "INFO" "deploy_db" "Unexpected exit (code $rc), performing rollback."
+      _restore_db_from_backup "$COMPRESSED_BACKUP"
+      RESTORED=1
+    fi
+    rm -f "$STAGING_DIR/.export-sql"
+    error 'Unable to import database'
+  }
+  trap _on_exit EXIT
+
+  fail_and_exit() {
+    local msg="$1"
+    log "ERROR" "deploy_db" "$msg"
+    if [ "$RESTORED" -eq 0 ]; then
+      log "INFO" "deploy_db" "Triggering rollback from backup due to failure."
+      _restore_db_from_backup "$COMPRESSED_BACKUP"
+      RESTORED=1
+    else
+      log "DEBUG" "deploy_db" "Rollback already performed, skipping."
+    fi
+    rm -f "$STAGING_DIR/.export-sql"
+    error "$msg"
+  }
+
+  # 1. Backup database production site
+  #
+  # This archive is a complete dump of the production database. PRODUCTION_DIR is the document
+  # root, so it used to be downloadable at /.db_backup_before_deploy_<epoch>.sql.gz -- a name that
+  # is guessable to the second, and the file is only removed on the success path, so a failed
+  # deploy left it there. Write it under nfd-private instead, which log() gives a deny-all
+  # .htaccess, and let mktemp add entropy and 0600 permissions. The log call below runs first so
+  # the directory and its .htaccess exist before anything is written into it.
+  log "INFO" "deploy_db" "Backing up production database"
+  COMPRESSED_BACKUP=$(mktemp "$PRODUCTION_DIR/nfd-private/db_backup_before_deploy_${TIMESTAMP}_XXXXXXXX.sql.gz" 2>/dev/null)
+  if [ -z "$COMPRESSED_BACKUP" ]; then
+    RESTORED=1
+    fail_and_exit "Unable to create the production backup file; aborting before any change to production."
+  fi
+  set -o pipefail
+  wp db export - --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet | gzip > "$COMPRESSED_BACKUP"
+  BACKUP_STATUS=$?
+  set +o pipefail
+  # Only gzip's exit status was checked before, and gzip succeeds on empty input: a failed export
+  # produced a well-formed empty archive, and production was dropped a few lines below with
+  # nothing to roll back to. Check the whole pipeline, that the archive is intact, and that it
+  # actually decompresses to something -- an export that exits 0 but writes nothing still yields a
+  # valid 20-byte archive. head -c bounds the decompression so this stays cheap on a large dump.
+  # Nothing has been dropped at this point, so RESTORED is set first to skip a pointless restore.
+  # Require an actual table in the archive, not just bytes: mysqldump writes ~50 bytes of header
+  # before anything else, so a dump that produced no tables at all still decompressed to something.
+  # head bounds the work on a large dump.
+  BACKUP_HEAD_BYTES=0
+  if gzip -dc "$COMPRESSED_BACKUP" 2>/dev/null | head -c 65536 | grep -q "CREATE TABLE"; then
+    BACKUP_HEAD_BYTES=1
+  fi
+  if [ $BACKUP_STATUS -ne 0 ] || [ ! -s "$COMPRESSED_BACKUP" ] || ! gzip -t "$COMPRESSED_BACKUP" 2>/dev/null \
+     || [ "${BACKUP_HEAD_BYTES:-0}" -lt 1 ]; then
+    rm -f "$COMPRESSED_BACKUP"
+    RESTORED=1
+    fail_and_exit "Production backup failed or is unreadable; aborting before any change to production."
+  fi
+  log "INFO" "deploy_db" "Production backup written ($(wc -c < "$COMPRESSED_BACKUP") bytes)."
+
+  # 2. Drop views/tables (best effort)
+  log "INFO" "deploy_db" "Dropping existing views and tables in production (best-effort)"
+  drop_views_and_tables "$PRODUCTION_DIR"
+
+  # --- Custom cleanup for staging prefix ---
+  # Only if the effective staging prefix is 'staging_wp_'
+  if [[ "${DB_PREFIX}" == "wp_" ]]; then
+      if [[ "$STAGING_DIR" != "" ]]; then
+        log "INFO" "deploy_db:cleanup" "Cleaning specific options from staging_wp_options"
+        wp db query "DELETE FROM staging_wp_options WHERE option_name IN ('wp_page_for_privacy_policy','wp_attachment_pages_enabled','wp_force_deactivated_plugins', 'wp_smush_api_auth');" --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet
+      fi
+  fi
+
+
+    # 3. Export staging SCHEMA ONLY (no data, no triggers). Row data is copied server-side below;
+    #    reimporting a full dump into production used to stream the whole DB through the client and
+    #    trip the host MySQL abuse throttle on larger sites (RCA: DEVSUP-149696).
+    log "INFO" "deploy_db" "Exporting staging database schema"
+    STAGING_TABLES=$(wp db tables --all-tables-with-prefix --format=csv --path="$STAGING_DIR" --skip-themes --skip-plugins --quiet 2>/dev/null)
+    # A failed/empty table lookup must not fall through to dumping the whole shared database (which
+    # would pull production tables into the prefix-rewrite + import). Abort; production is restored
+    # from the backup taken above.
+    if [ -z "$STAGING_TABLES" ]; then
+      fail_and_exit "Unable to list staging tables to deploy; aborting (production restored from backup)."
+    fi
+    # Schema-only dump of the STAGING tables via the dump binary directly (wp db export drops
+    # valueless flags). Row data is copied server-side after the schema import.
+    if ! dump_schema_only "$STAGING_DIR/.export-sql" "deploy_db:db_export" "$STAGING_DIR" "$STAGING_TABLES"; then
+      fail_and_exit "Unable to export database from staging."
+    fi
+
+    # 4. Rewrite staging -> production prefixes (and strip DEFINER) in the schema dump.
+    log "INFO" "deploy_db" "Replacing staging prefixes in schema SQL"
+    if ! rewrite_dump_prefixes "$STAGING_DIR/.export-sql" "staging_${DB_PREFIX}" "${DB_PREFIX}" "prod_" 1 "$STAGING_TABLES"; then
+      fail_and_exit "Unable to update prefix in staging SQL."
+    fi
+
+    log "INFO" "deploy_db" "Normalizing/uniquifying constraint names for production"
+    if ! normalize_fk_names "$STAGING_DIR/.export-sql" "deploy_db" "prod_"; then
+      fail_and_exit "Unable to normalize constraint names."
+    fi
+
+    # 5. Import staging SCHEMA into production (tiny).
+    log "INFO" "deploy_db" "Importing staging schema into production"
+    local import_charset
+    import_charset=$(resolve_db_charset "$PRODUCTION_DIR")
+    IMPORT_CMD=(wp db import "$STAGING_DIR/.export-sql" --default-character-set="$import_charset" --path="$PRODUCTION_DIR" --skip-themes --skip-plugins --quiet)
+    OUTPUT=$("${IMPORT_CMD[@]}" 2>&1) || RC=$? || true
+    RC=${RC:-0}
+    log "DEBUG" "deploy_db" "schema import exit code: $RC; raw output length: ${#OUTPUT}"
+    if [ -n "$OUTPUT" ]; then
+      while IFS= read -r line; do
+        log "DEBUG" "deploy_db:import_output" "$line"
+      done <<< "$OUTPUT"
+    fi
+    if [ $RC -ne 0 ]; then
+      if [ -f /var/log/mysql/error.log ]; then
+        log "DEBUG" "deploy_db" "Tail of last 20 lines of MySQL log:"
+        tail -n20 /var/log/mysql/error.log | while IFS= read -r l; do
+          log "DEBUG" "deploy_db:mysql_error_log" "$l"
+        done
+      fi
+      fail_and_exit "Unable to import staging database into production. Output: $OUTPUT"
+    fi
+
+    # 5b. Copy row data staging -> production server-side (INSERT ... SELECT in the shared DB).
+    log "INFO" "deploy_db" "Copying staging table data into production (server-side)"
+    if ! copy_table_data_server_side "$PRODUCTION_DIR" "staging_${DB_PREFIX}" "${DB_PREFIX}" "deploy_db:copy_data" "$STAGING_TABLES"; then
+      fail_and_exit "Unable to copy staging table data into production."
+    fi
+
+    # 5c. Copy triggers last, after the data is in place.
+    # Reuse the STAGING_TABLES list validated above (do not re-query silently).
+    if ! copy_triggers "$STAGING_DIR" "$PRODUCTION_DIR" "$STAGING_TABLES" "staging_${DB_PREFIX}" "${DB_PREFIX}" "prod_" "deploy_db:copy_triggers"; then
+      fail_and_exit "Unable to copy triggers into production."
+    fi
+
+
+    # 6. Search-replace URL (paced by table size; see search_replace_paced).
+    log "INFO" "deploy_db" "Running search-replace $STAGING_URL -> $PRODUCTION_URL"
+    search_replace_paced "$PRODUCTION_DIR" "$STAGING_URL" "$PRODUCTION_URL" "deploy_db:search_replace" "${DB_PREFIX}"
+    RC=$?
+    log "DEBUG" "deploy_db" "search_replace_paced exit code: $RC"
+    if [ $RC -ne 0 ]; then
+      fail_and_exit "Unable to update URLs on production (see per-table search-replace errors in the log)."
+    fi
+
+    # 6b. Rename staging-prefixed option names and meta keys back to production prefix
+    rename_prefixed_keys_to_production "$PRODUCTION_DIR" "deploy_db:rename_prefixed_keys"
+
+    # 7. Update staging_environment
+    log "INFO" "deploy_db" "Updating staging_environment to production"
+    OUTPUT=$(wp option update staging_environment production --path="$PRODUCTION_DIR" --skip-themes --skip-plugins 2>&1)
+    RC=$?
+    log "DEBUG" "deploy_db" "staging_environment update exit code: $RC; output: $OUTPUT"
+    if [ $RC -ne 0 ]; then
+      fail_and_exit "Unable to set staging_environment to production. Output: $OUTPUT"
+    fi
+
+    # 8. Update staging_config
+    log "INFO" "deploy_db" "Updating staging_config"
+    log "DEBUG" "deploy_db" "Command: wp option update staging_config '$STAGING_CONFIG_JSON' --format=json --path='$PRODUCTION_DIR'"
+    OUTPUT=$(wp option update staging_config "$STAGING_CONFIG_JSON" --format=json --path="$PRODUCTION_DIR" --skip-themes --skip-plugins 2>&1)
+    RC=$?
+    log "DEBUG" "deploy_db" "staging_config update exit code: $RC; raw output length: ${#OUTPUT}; output: $OUTPUT"
+    if [ $RC -ne 0 ]; then
+      fail_and_exit "Unable to import global config on production. Exit code: $RC. Output: $OUTPUT"
+    fi
+    if echo "$OUTPUT" | grep -qE '^Error:'; then
+      fail_and_exit "Detected explicit error prefix in output when updating staging_config. Output: $OUTPUT"
+    fi
+
+    # 9. Disable coming soon
+    log "INFO" "deploy_db" "Deleting nfd_coming_soon option"
+    OUTPUT=$(wp option delete nfd_coming_soon --path="$PRODUCTION_DIR" --skip-themes --skip-plugins 2>&1)
+    RC=$?
+    log "DEBUG" "deploy_db" "nfd_coming_soon delete exit code: $RC; output: $OUTPUT"
+    if [ $RC -ne 0 ]; then
+      fail_and_exit "Unable to turn off Coming Soon page. Output: $OUTPUT"
+    fi
+
+  # Success: disable automatic rollback; restore global cleanup (releases staging lock on exit)
+  RESTORED=1
+  trap cleanup EXIT
+
+  log "SUCCESS" "deploy_db:end" "Database deployed successfully."
+  write_deploy_result "success" "Database deployed successfully." "deploy_db"
+  echo '{"status":"success","message":"Database deployed successfully."}'
+
+  # Clear backup and the schema dump. Both sit under a web-served directory, so neither should
+  # outlive the deploy: create and clone already delete the dump, deploy_db never did.
+  rm -f "$COMPRESSED_BACKUP"
+  rm -f "$STAGING_DIR/.export-sql"
+  log "INFO" "deploy_db" "Cleaned up backup file and schema dump."
+
+  # Restore normal behaviour
+  set -e
+}
+
+deploy_files_db() {
+  deploy_files
+  log "INFO" "deploy_files_db" "Files deployed successfully! Now database deployment will initiate."
+  deploy_db
+  log "SUCCESS" "deploy_files_db:end" "Database deployed successfully."
+  write_deploy_result "success" "Files and Database deployed successfully." "deploy_files_db"
+  echo '{"status":"success","message":"Files and Database deployed successfully."}'
+}
+
+# --- Rewrite .htaccess ---
+rewrite_htaccess() {
+  log "INFO" "rewrite_htaccess" "Rewriting .htaccess"
+  local LOCATION="$1"
+  # Run in a subshell and redirect all output to /dev/null to avoid polluting stdout
+  ( wp eval 'global $wp_rewrite; echo $wp_rewrite->mod_rewrite_rules();' --path="$LOCATION" --skip-themes --skip-plugins --quiet > "$LOCATION/.htaccess" ) > /dev/null 2>&1 || error 'Unable to create .htaccess file.'
+}
+
+# --- Main Entrypoint ---
+#
+# Staging::runCommand() exports NFD_STAGING_ENV so this does not have to be guessed. pwd is not a
+# reliable signal: where the staging site's index.php is a symlink into production's core, PHP
+# resolves the symlink and a request to /staging/<id>/index.php runs with the production directory
+# as its working directory. The old test below then picked PRODUCTION_DIR while PHP had written the
+# token to the staging database, and auth_action() reported a missing token.
+#
+# Only the two keywords are honoured, so the variable can never redirect the read at an arbitrary
+# path. The pwd test remains as the fallback for support running this script by hand.
+case "${NFD_STAGING_ENV:-}" in
+  staging)
+    CURRENT_DIR=$STAGING_DIR
+    ;;
+  production)
+    CURRENT_DIR=$PRODUCTION_DIR
+    ;;
+  *)
+    if [[ $(pwd) == *"/staging/"* ]]; then
+      CURRENT_DIR=$STAGING_DIR
+    else
+      CURRENT_DIR=$PRODUCTION_DIR
+    fi
+    ;;
+esac
+
+compatibility_check "$1"
+auth_action $2
+lock_check
+
+case "$1" in
+  create) create "$@";;
+  destroy) destroy "$@";;
+  clone) clone "$@";;
+  deploy_files) deploy_files "$@";;
+  deploy_db) deploy_db "$@";;
+  deploy_files_db) deploy_files_db "$@";;
+  sso_staging) sso_staging "$@";;
+  sso_production) sso_production "$@";;
+  *) log "ERROR" "main" "Unknown command: $1"; echo '{"status":"error","message":"Unknown command: '$1'"}'; exit 1;;
+esac
+
+# Lock is released by cleanup EXIT trap, or by error()/release_staging_lock on failure paths

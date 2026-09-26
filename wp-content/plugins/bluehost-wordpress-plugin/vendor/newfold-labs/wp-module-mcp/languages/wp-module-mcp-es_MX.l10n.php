@@ -1,0 +1,13 @@
+<?php
+return [
+	'domain' => 'wp-module-mcp',
+	'plural-forms' => 'nplurals=2; plural=(n != 1);',
+	'language' => 'es_MX',
+	'project-id-version' => '',
+	'pot-creation-date' => '2025-02-13T09:55:55+00:00',
+	'po-revision-date' => '2026-09-02T13:39:47+00:00',
+	'x-generator' => 'WP-CLI 2.12.0',
+	'messages' => [
+		'A prompt is required.' => 'Se requiere un mensaje.',
+	],
+];

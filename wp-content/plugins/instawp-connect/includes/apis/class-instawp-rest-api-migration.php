@@ -1,0 +1,645 @@
+<?php
+
+use InstaWP\Connect\Helpers;
+use InstaWP\Connect\Helpers\Helper;
+use InstaWP\Connect\Helpers\Option;
+use InstaWP\Connect\Helpers\Curl;
+
+defined( 'ABSPATH' ) || die;
+
+class InstaWP_Rest_Api_Migration extends InstaWP_Rest_Api {
+
+	public function __construct() {
+		parent::__construct();
+
+		add_action( 'rest_api_init', array( $this, 'add_api_routes' ) );
+	}
+
+	public function add_api_routes() {
+		register_rest_route(
+			$this->namespace . '/' . $this->version_3,
+			'/pull',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_pull_api' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+
+		register_rest_route(
+			$this->namespace . '/' . $this->version_3,
+			'/push',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_push_api' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+
+		register_rest_route(
+			$this->namespace . '/' . $this->version_3,
+			'/post-cleanup',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_post_migration_cleanup' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+
+		register_rest_route(
+			$this->namespace . '/' . $this->version_3,
+			'/update-migration',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'handle_update_migration' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+	}
+
+	/**
+	 * Handle update migration API
+	 *
+	 * @param WP_REST_Request $request
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function handle_update_migration( WP_REST_Request $request ) {
+
+		$response = $this->validate_api_request( $request );
+		if ( is_wp_error( $response ) ) {
+			return $this->throw_error( $response );
+		}
+
+		$is_end_to_end = sanitize_text_field( $request->get_param( 'is_end_to_end' ) );
+		$status        = sanitize_text_field( $request->get_param( 'status' ) );
+
+		$existing                   = Option::get_option( 'instawp_migration_details', array() );
+		$existing['is_end_to_end']  = $is_end_to_end;
+		$existing['status']         = $status;
+
+		Option::update_option( 'instawp_migration_details', $existing );
+
+		return $this->send_response(
+			array(
+				'success' => true,
+				'message' => esc_html__( 'Migration details updated successfully.', 'instawp-connect' ),
+			)
+		);
+	}
+
+	/**
+	 * Handle response for pull api
+	 *
+	 * @param WP_REST_Request $request
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function handle_pull_api( WP_REST_Request $request ) {
+
+		$response = $this->validate_api_request( $request );
+		if ( is_wp_error( $response ) ) {
+			return $this->throw_error( $response );
+		}
+
+		$migrate_key = sanitize_text_field( $request->get_param( 'migrate_key' ) );
+
+		// Prevent a new migration from destroying an active one's options file.
+		// get_pull_pre_check_response() calls clean_instawpbackups_dir() which deletes ALL files,
+		// including the options-{key}.txt needed by the in-progress migration's iwp-serve endpoint.
+		// - Different key + active migration → 409 error (protects active options file)
+		// - Same key (idempotent retry) → allowed through (file will be safely recreated)
+		// - No active migration → allowed through (normal flow)
+		// - Stale migration (>24h or terminated on client-app) → auto-cleared and allowed through
+		$existing_migration   = Option::get_option( 'instawp_migration_details', array() );
+		$existing_key         = Helper::get_args_option( 'migrate_key', $existing_migration );
+		$existing_status      = Helper::get_args_option( 'status', $existing_migration );
+		$existing_started_at  = Helper::get_args_option( 'started_at', $existing_migration );
+		$terminal_statuses    = array( 'completed', 'failed', 'aborted', 'timeout' );
+		$is_stale             = ! empty( $existing_started_at ) && ( time() - strtotime( $existing_started_at ) ) > DAY_IN_SECONDS;
+
+		if ( ! empty( $existing_key ) && ! in_array( $existing_status, $terminal_statuses, true ) && $existing_key !== $migrate_key ) {
+			$should_clear = false;
+
+			// Check with client-app if the existing migration is still active using source_url.
+			$source_url   = rawurlencode( Helper::wp_site_url( '', true ) );
+			$api_response = Curl::do_curl( "migrates-v3/check-status?source_url={$source_url}", array(), array(), 'GET' );
+			$api_data     = Helper::get_args_option( 'data', $api_response, array() );
+			$api_status   = Helper::get_args_option( 'status', $api_data );
+
+			// If client-app says migration is terminal or not found — clear it.
+			if ( in_array( $api_status, $terminal_statuses, true ) || ( isset( $api_response['success'] ) && ! $api_response['success'] ) ) {
+				$should_clear = true;
+			}
+
+			// Fallback: treat migration older than 24 hours as stale.
+			if ( ! $should_clear && $is_stale ) {
+				$should_clear = true;
+			}
+
+			if ( $should_clear ) {
+				instawp_reset_running_migration();
+			} else {
+				return $this->throw_error(
+					new WP_Error(
+						409,
+						esc_html__( 'A migration is already in progress. Please wait for it to complete or reset it before starting a new one.', 'instawp-connect' )
+					)
+				);
+			}
+		}
+
+		$is_end_to_end            = sanitize_text_field( $request->get_param( 'is_end_to_end' ) );
+		$migrate_settings         = $request->get_param( 'migrate_settings' );
+		$migrate_settings['mode'] = 'pull';
+		$pre_check_response       = InstaWP_Tools::get_pull_pre_check_response( $migrate_key, $migrate_settings );
+
+		if ( is_wp_error( $pre_check_response ) ) {
+			return $this->throw_error( $pre_check_response );
+		}
+
+		global $wp_version;
+
+		$pre_check_response['source_domain']       = Helper::wp_site_url( '', true );
+		$pre_check_response['php_version']         = PHP_VERSION;
+		$pre_check_response['wp_version']          = $wp_version;
+		$pre_check_response['plugin_version']      = INSTAWP_PLUGIN_VERSION;
+		$pre_check_response['file_size']           = InstaWP_Tools::get_total_sizes( 'files', $migrate_settings );
+		$pre_check_response['db_size']             = InstaWP_Tools::get_total_sizes( 'db' );
+		$pre_check_response['is_website_on_local'] = instawp_is_website_on_local();
+		$pre_check_response['active_plugins']      = Option::get_option( 'active_plugins' );
+		$pre_check_response['wp_admin_email']      = get_bloginfo( 'admin_email' );
+
+		Option::update_option(
+			'instawp_migration_details',
+			array(
+				'migrate_key'   => $migrate_key,
+				'is_end_to_end' => $is_end_to_end,
+				// 'dest_url'    => Helper::get_args_option( 'serve_url', $pre_check_response ),
+				'started_at'    => current_time( 'mysql', 1 ),
+				'status'        => 'initiated',
+				'mode'          => 'pull',
+			)
+		);
+
+		return $this->send_response( $pre_check_response );
+	}
+
+	/**
+	 * Handle response for push api
+	 *
+	 * @param WP_REST_Request $request
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function handle_push_api( WP_REST_Request $request ) {
+
+		$response = $this->validate_api_request( $request );
+		if ( is_wp_error( $response ) ) {
+			return $this->throw_error( $response );
+		}
+
+		if ( ! ini_get( 'allow_url_fopen' ) ) {
+			return $this->throw_error( new WP_Error( 403, esc_html__( 'Migration could not initiate because the allow_url_fopen is set to false.', 'instawp-connect' ) ) );
+		}
+
+		global $wp_version;
+
+		// Create InstaWP backup directory
+		InstaWP_Tools::create_instawpbackups_dir();
+
+		// Clean InstaWP backup directory
+		InstaWP_Tools::clean_instawpbackups_dir();
+
+		$migrate_key      = Helper::get_random_string( 40 );
+		$migrate_settings = InstaWP_Tools::get_migrate_settings( array(), array( 'mode' => 'push' ) );
+		$api_signature    = hash( 'sha512', $migrate_key . wp_generate_uuid4() );
+		$dest_file_url    = InstaWP_Tools::generate_destination_file( $migrate_key, $api_signature, $migrate_settings, true );
+		// Check accessibility of serve file
+		if ( empty( $dest_file_url['dest_url'] ) ) {
+			return $this->throw_error( new WP_Error( 403, esc_html( $dest_file_url['error'] ) ) );
+		}
+
+		$dest_file_url = $dest_file_url['dest_url'];
+
+		$is_end_to_end = sanitize_text_field( $request->get_param( 'is_end_to_end' ) );
+
+		Option::update_option(
+			'instawp_migration_details',
+			array(
+				'migrate_key'   => $migrate_key,
+				'is_end_to_end' => $is_end_to_end,
+				'dest_url'      => $dest_file_url,
+				'started_at'    => current_time( 'mysql', 1 ),
+				'status'        => 'initiated',
+				'mode'          => 'push',
+			)
+		);
+
+		$migrate_settings['has_zip_archive'] = class_exists( 'ZipArchive' );
+		$migrate_settings['has_phar_data']   = class_exists( 'PharData' );
+
+		return $this->send_response(
+			array(
+				'php_version'      => PHP_VERSION,
+				'wp_version'       => $wp_version,
+				'plugin_version'   => INSTAWP_PLUGIN_VERSION,
+				'active_plugins'   => Option::get_option( 'active_plugins' ),
+				'migrate_settings' => $migrate_settings,
+				'migrate_key'      => $migrate_key,
+				'dest_url'         => $dest_file_url,
+				'api_signature'    => $api_signature,
+			)
+		);
+	}
+
+	/**
+	 * Handle response for post migration cleanup api
+	 *
+	 * @param WP_REST_Request $request
+	 *
+	 * @return WP_REST_Response
+	 */
+	public function handle_post_migration_cleanup( WP_REST_Request $request ) {
+
+		try {
+			// Flushing db cache after migration
+			wp_cache_flush();
+
+			$response = $this->validate_api_request( $request );
+			if ( is_wp_error( $response ) ) {
+				return $this->throw_error( $response );
+			}
+
+			// Sanitize wp-config.php after migration to fix platform-specific paths
+			$this->sanitize_wp_config();
+
+			if ( ! function_exists( 'deactivate_plugins' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+			}
+
+			if ( ! function_exists( 'request_filesystem_credentials' ) ) {
+				require_once ABSPATH . 'wp-admin/includes/file.php';
+			}
+
+			$plugin_slug           = INSTAWP_PLUGIN_SLUG . '/' . INSTAWP_PLUGIN_SLUG . '.php';
+			$response              = array(
+				'success'       => true,
+				'sso_login_url' => Helper::wp_site_url( '', true ),
+			);
+			$clear_connect         = $request->get_param( 'clear_connect' );
+			$clear_connect         = ! in_array( 'clear_connect', array_keys( $request->get_params() ) ) ? true : $clear_connect;
+			$delete_connect_plugin = $request->get_param( 'delete_connect_plugin' );
+			$delete_connect_plugin = ! in_array( 'delete_connect_plugin', array_keys( $request->get_params() ) ) ? true : $delete_connect_plugin;
+			$migrate_group_uuid    = $request->get_param( 'migrate_group_uuid' );
+			$migration_status      = $request->get_param( 'status' );
+			$migration_details     = Option::get_option( 'instawp_migration_details' );
+			$plugins_to_delete     = array();
+
+			$migration_details['migrate_group_uuid']  = $migrate_group_uuid;
+			$migration_details['status']              = $migration_status;
+			$migration_details['post_cleanup_called'] = true;
+
+			// Option::update_option( 'instawp_last_migration_details', $migration_details );
+			// Install the plugins if there is any in the request
+			$post_installs = $request->get_param( 'post_installs' );
+
+			if ( ! empty( $post_installs ) && is_array( $post_installs ) ) {
+				$installer         = new Helpers\Installer( $post_installs );
+				$post_installs_res = $installer->start();
+
+				foreach ( $post_installs_res as $install_res ) {
+					if ( ! isset( $install_res['success'] ) || ! $install_res['success'] ) {
+						$response['success']            = false;
+						$response['post_install_error'] = esc_html__( 'Installation failed', 'instawp-connect' );
+						break;
+					}
+				}
+
+				$response['post_installs'] = $post_installs_res;
+			}
+
+			// SSO Url for the Bluehost
+			if ( class_exists( 'NewfoldLabs\WP\Module\Migration\Services\MigrationSSO' ) ) {
+				$login_url_response = NewfoldLabs\WP\Module\Migration\Services\MigrationSSO::get_magic_login_url();
+
+				if ( $login_url_response instanceof WP_REST_Response && $login_url_response->get_status() === 200 ) {
+					$response['sso_login_url'] = $login_url_response->get_data();
+				} else {
+					$response['success']       = false;
+					$response['cleanup_error'] = esc_html__( 'Error getting SSO login url.', 'instawp-connect' );
+
+					error_log( 'sso_url_response: ' . wp_json_encode( $login_url_response ) );
+				}
+			} else {
+				error_log( esc_html__( 'sso_url_class_not_found: This class NewfoldLabs\WP\Module\Migration\Services\MigrationSSO not found.', 'instawp-connect' ) );
+			}
+
+			// disable bluehost coming soon notice
+			update_option( 'nfd_coming_soon', false );
+
+			$migration_details['status'] = in_array( $migration_status, array( 'aborted', 'failed', 'timeout' ) ) ? $migration_status : 'completed';
+
+			Option::update_option( 'instawp_last_migration_details', $migration_details );
+
+			// The migration has reached a terminal state, so the encrypted options file is
+			// no longer needed. Deleted here rather than relying on clean_iwp_files_dir()
+			// below, which only runs for 'completed' — an aborted, failed or timed out
+			// migration would otherwise leave the file (and its key-bearing name) on disk.
+			instawp_delete_migration_options_file( Helper::get_args_option( 'migrate_key', $migration_details ) );
+
+			$connect_id = instawp_get_connect_id();
+
+			// Reset migration state. Connected sites (with a valid connect_id)
+			// get a soft reset that cleans migration temp data only — their
+			// instawp_api_options, instawp_is_staging etc. must survive so the
+			// site stays connected to the dashboard. Disconnected sites get the
+			// full hard reset + server-side disconnect as before.
+			if ( $clear_connect ) {
+				if ( ! empty( $connect_id ) ) {
+					instawp_reset_running_migration();
+				} else {
+					instawp_reset_running_migration( 'hard', true );
+				}
+			}
+
+			$post_uninstalls = $request->get_param( 'post_uninstalls' );
+			$post_uninstalls = ! empty( $post_uninstalls ) ? $post_uninstalls : array();
+
+			foreach ( $post_uninstalls as $post_uninstall_item ) {
+				$plugins_to_delete[] = $post_uninstall_item;
+			}
+
+			// Adding helper plugins to delete
+			foreach ( instawp_mig_excluded_plugins() as $del_helper_plugin ) {
+				$plugins_to_delete[] = array(
+					'slug'   => $del_helper_plugin . DIRECTORY_SEPARATOR . ( str_replace( '-main', '', $del_helper_plugin ) ) . '.php',
+					'type'   => 'plugin',
+					'delete' => true,
+				);
+			}
+
+			// Adding instawp-connect plugin to delete after the migration if delete connect plugin flag is enabled
+			// Skip if site has an active connect_id — plugin is still needed for the connection
+			if ( $delete_connect_plugin && empty( $connect_id ) ) {
+				$plugins_to_delete[] = array(
+					'slug'   => $plugin_slug,
+					'type'   => 'plugin',
+					'delete' => true,
+				);
+			}
+
+			// Cleaning up migrations and backup files
+			if ( $migration_details['status'] === 'completed' ) {
+				InstaWP_Tools::clean_iwp_files_dir();
+			}
+
+			// Hard guard: if instawp-connect is in the delete list and the site is
+			// still connected or is a staging site, remove it. Covers every path
+			// that can append it (white-label post_uninstalls, delete_connect_plugin
+			// default, future code). Reuses $connect_id from the pre-filter above.
+			$connect_index = array_search( $plugin_slug, array_column( $plugins_to_delete, 'slug' ), true );
+			if ( false !== $connect_index ) {
+				$is_staging_site = (bool) Option::get_option( 'instawp_is_staging' );
+				$parent_connect  = Option::get_option( 'instawp_sync_connect_id' );
+
+				if ( ! empty( $connect_id ) || $is_staging_site || ! empty( $parent_connect ) ) {
+					unset( $plugins_to_delete[ $connect_index ] );
+					Helper::add_error_log(
+						'Removed instawp-connect from post_migration_cleanup delete list — site is connected/staging',
+						array(
+							'connect_id'        => $connect_id,
+							'is_staging'        => $is_staging_site,
+							'parent_connect_id' => $parent_connect,
+						)
+					);
+				}
+			}
+
+			foreach ( $plugins_to_delete as $plugin ) {
+
+				$_slug   = InstaWP_Setting::get_args_option( 'slug', $plugin );
+				$_delete = (bool) InstaWP_Setting::get_args_option( 'delete', $plugin, false );
+
+				deactivate_plugins( $_slug );
+
+				if ( $_delete ) {
+					$is_deleted = delete_plugins( array( $_slug ) );
+
+					if ( is_wp_error( $is_deleted ) ) {
+						$response['uninstall'][ $_slug ] = array(
+							'slug'    => $_slug,
+							'success' => false,
+							'message' => $is_deleted->get_error_message(),
+						);
+					}
+				}
+			}
+
+			$response['message'] = esc_html__( 'Post migration cleanup completed.', 'instawp-connect' );
+
+			return $this->send_response( $response );
+		} catch ( \Throwable $th ) {
+			$response = array(
+				'success'     => false,
+				'message'     => $th->getMessage(),
+				'line_number' => $th->getLine(),
+				'file'        => $th->getFile(),
+				'response'    => $response,
+			);
+			error_log( 'migration clean up exception: ' . json_encode( $response ) );
+			return $this->send_response( $response );
+		}
+	}
+
+	/**
+	 * Sanitize wp-config.php after migration to remove platform-specific paths.
+	 *
+	 * When sites are migrated from platform-specific hosting (e.g., Bitnami, Plesk, cPanel),
+	 * wp-config.php often contains hardcoded paths that don't exist on the destination server,
+	 * causing Fatal errors and 504 Gateway Timeouts.
+	 *
+	 * Public so it can be invoked via WP-CLI `wp eval` from HestiaCP migration scripts
+	 * on pure pull migrations where the post-migration cleanup REST endpoint is not called.
+	 *
+	 * @return array {
+	 *     @type bool   $success  Whether the operation completed without error.
+	 *     @type bool   $modified Whether wp-config.php was actually changed.
+	 *     @type string $message  Human-readable status message.
+	 * }
+	 */
+	public function sanitize_wp_config() {
+		try {
+			$wp_config_path = ABSPATH . 'wp-config.php';
+			if ( ! file_exists( $wp_config_path ) ) {
+				$wp_config_path = dirname( ABSPATH ) . '/wp-config.php';
+			}
+			if ( ! file_exists( $wp_config_path ) || ! is_writable( $wp_config_path ) ) {
+				return array(
+					'success'  => false,
+					'modified' => false,
+					'message'  => 'wp-config.php not found or not writable.',
+				);
+			}
+
+			$content = file_get_contents( $wp_config_path );
+			if ( empty( $content ) ) {
+				return array(
+					'success'  => false,
+					'modified' => false,
+					'message'  => 'wp-config.php is empty or unreadable.',
+				);
+			}
+
+			$modified = false;
+
+			// Platform-specific path patterns that indicate a migrated wp-config.
+			$platform_patterns = array(
+				'/bitnami/',
+				'/opt/bitnami/',
+				'/app/public/',
+				'/srv/htdocs/',
+				'/nas/content/',
+			);
+
+			// 1. Fix WP_DEBUG_LOG if it points to a non-existent directory.
+			if ( preg_match( "/define\s*\(\s*['\"]WP_DEBUG_LOG['\"]\s*,\s*['\"](.+?)['\"]\s*\)/", $content, $matches ) ) {
+				$debug_log_path = $matches[1];
+				$debug_log_dir  = dirname( $debug_log_path );
+
+				$is_platform_path = false;
+				foreach ( $platform_patterns as $pattern ) {
+					if ( false !== strpos( $debug_log_path, $pattern ) ) {
+						$is_platform_path = true;
+						break;
+					}
+				}
+
+				if ( $is_platform_path || ! is_dir( $debug_log_dir ) ) {
+					$content  = preg_replace(
+						"/define\s*\(\s*['\"]WP_DEBUG_LOG['\"]\s*,\s*['\"].+?['\"]\s*\)/",
+						"define( 'WP_DEBUG_LOG', true )",
+						$content
+					);
+					$modified = true;
+				}
+			}
+
+			// 2. Remove WP_CONTENT_DIR if it references platform-specific or non-existent paths.
+			if ( preg_match( "/define\s*\(\s*['\"]WP_CONTENT_DIR['\"]\s*,\s*['\"](.+?)['\"]\s*\)/", $content, $matches ) ) {
+				$content_dir   = $matches[1];
+				$should_remove = false;
+
+				foreach ( $platform_patterns as $pattern ) {
+					if ( false !== strpos( $content_dir, $pattern ) ) {
+						$should_remove = true;
+						break;
+					}
+				}
+
+				// Also remove if the path doesn't exist on this server.
+				if ( ! $should_remove && ! is_dir( $content_dir ) ) {
+					$should_remove = true;
+				}
+
+				if ( $should_remove ) {
+					$content  = preg_replace(
+						"/define\s*\(\s*['\"]WP_CONTENT_DIR['\"]\s*,\s*['\"].+?['\"]\s*\);\s*\n?/",
+						'',
+						$content
+					);
+					$modified = true;
+				}
+			}
+
+			// Also handle WP_CONTENT_DIR defined with a constant expression using an undefined constant.
+			if ( preg_match( "/define\s*\(\s*['\"]WP_CONTENT_DIR['\"]\s*,\s*(?!__DIR__)([A-Z_]+)\s*\.\s*/", $content, $matches ) ) {
+				$used_constant = $matches[1];
+				// If the constant used is not ABSPATH (defined at the bottom of wp-config)
+				// or __DIR__, it will likely cause a fatal error. Remove the definition.
+				if ( 'ABSPATH' !== $used_constant && '__DIR__' !== $used_constant ) {
+					$content  = preg_replace(
+						"/define\s*\(\s*['\"]WP_CONTENT_DIR['\"]\s*,\s*[^)]+\);\s*\n?/",
+						'',
+						$content
+					);
+					$modified = true;
+				}
+			}
+
+			// 3. Remove WP_CONTENT_URL if it references platform-specific paths.
+			if ( preg_match( "/define\s*\(\s*['\"]WP_CONTENT_URL['\"]\s*,\s*['\"](.+?)['\"]\s*\)/", $content, $matches ) ) {
+				$content_url   = $matches[1];
+				$should_remove = false;
+
+				foreach ( $platform_patterns as $pattern ) {
+					if ( false !== strpos( $content_url, $pattern ) ) {
+						$should_remove = true;
+						break;
+					}
+				}
+
+				if ( $should_remove ) {
+					$content  = preg_replace(
+						"/define\s*\(\s*['\"]WP_CONTENT_URL['\"]\s*,\s*['\"].+?['\"]\s*\);\s*\n?/",
+						'',
+						$content
+					);
+					$modified = true;
+				}
+			}
+
+			// 4. Remove WP_PLUGIN_DIR / WP_PLUGIN_URL / WPMU_PLUGIN_DIR / WPMU_PLUGIN_URL / UPLOADS
+			// if they reference platform-specific paths.
+			$plugin_constants = array( 'WP_PLUGIN_DIR', 'WP_PLUGIN_URL', 'WPMU_PLUGIN_DIR', 'WPMU_PLUGIN_URL', 'UPLOADS' );
+			foreach ( $plugin_constants as $constant_name ) {
+				if ( preg_match( "/define\s*\(\s*['\"]" . $constant_name . "['\"]\s*,\s*['\"](.+?)['\"]\s*\)/", $content, $matches ) ) {
+					$path_value = $matches[1];
+					foreach ( $platform_patterns as $pattern ) {
+						if ( false !== strpos( $path_value, $pattern ) ) {
+							$content  = preg_replace(
+								"/define\s*\(\s*['\"]" . $constant_name . "['\"]\s*,\s*['\"].+?['\"]\s*\);\s*\n?/",
+								'',
+								$content
+							);
+							$modified = true;
+							break;
+						}
+					}
+				}
+			}
+
+			if ( $modified ) {
+				$bytes = file_put_contents( $wp_config_path, $content );
+				if ( false === $bytes ) {
+					return array(
+						'success'  => false,
+						'modified' => false,
+						'message'  => 'Failed to write sanitized wp-config.php.',
+					);
+				}
+				return array(
+					'success'  => true,
+					'modified' => true,
+					'message'  => 'wp-config.php sanitized successfully.',
+				);
+			}
+
+			return array(
+				'success'  => true,
+				'modified' => false,
+				'message'  => 'wp-config.php already clean, no changes needed.',
+			);
+		} catch ( \Throwable $e ) {
+			// Sanitization failure should never break the migration.
+			Helper::add_error_log( 'wp-config sanitization error: ' . $e->getMessage(), $e );
+			return array(
+				'success'  => false,
+				'modified' => false,
+				'message'  => 'wp-config sanitization error: ' . $e->getMessage(),
+			);
+		}
+	}
+}
+
+new InstaWP_Rest_Api_Migration();

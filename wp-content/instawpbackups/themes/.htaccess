@@ -1,0 +1,14 @@
+# InstaWP: deny direct HTTP access to migration credential/database artifacts
+# (options-{key}.txt and any .sql/.sqlite). PHP filesystem reads are unaffected;
+# plugin/theme sync .zip stays reachable.
+<IfModule mod_access_compat.c>
+	<FilesMatch "\.(txt|sql|sqlite)$">
+		Order Allow,Deny
+		Deny from all
+	</FilesMatch>
+</IfModule>
+<IfModule !mod_access_compat.c>
+	<FilesMatch "\.(txt|sql|sqlite)$">
+		Require all denied
+	</FilesMatch>
+</IfModule>

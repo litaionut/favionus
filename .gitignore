@@ -1,0 +1,12 @@
+# favionus-import-ignore
+# Date de conectare, dump-uri, jurnale, cache și fișiere parțiale.
+wp-config.php
+wp-config.php.bak
+*.sql
+*.sql.gz
+*.log
+error_log
+*.partial
+cache/
+*.tar
+*.tar.gz

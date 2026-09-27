@@ -48,6 +48,7 @@ $phone    = trim( (string) get_theme_mod( 'doppler_lidar_phone', '' ) );
 						<a href="<?php echo esc_url( $home . '#data-quality' ); ?>"><?php esc_html_e( 'Data Quality', 'doppler_lidar' ); ?></a>
 						<a href="<?php echo esc_url( $home . '#technology' ); ?>"><?php esc_html_e( 'Technology', 'doppler_lidar' ); ?></a>
 						<a href="<?php echo esc_url( home_url( '/wind-lidar-measurement-campaigns/' ) ); ?>"><?php esc_html_e( 'Services', 'doppler_lidar' ); ?></a>
+						<a href="<?php echo esc_url( doppler_lidar_resources_url() ); ?>"><?php esc_html_e( 'Research & Blog', 'doppler_lidar' ); ?></a>
 						<a href="<?php echo esc_url( $home . '#contact' ); ?>"><?php esc_html_e( 'Contact', 'doppler_lidar' ); ?></a>
 					</nav>
 				</div>

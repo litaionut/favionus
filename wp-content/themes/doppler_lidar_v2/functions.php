@@ -9,7 +9,7 @@
 
 if ( ! defined( '_S_VERSION' ) ) {
 	// Replace the version number of the theme on each release.
-	define( '_S_VERSION', '1.7.4' );
+	define( '_S_VERSION', '1.7.7' );
 }
 
 /**
@@ -341,19 +341,19 @@ add_action( 'wp_enqueue_scripts', 'doppler_lidar_dequeue_unused_cf7', 100 );
  * Fallback primary navigation matching the homepage mockup.
  */
 function doppler_lidar_primary_menu_fallback() {
-	$home = home_url( '/' );
 	$items = array(
-		'#technology'    => __( 'LiDAR Systems', 'doppler_lidar' ),
-		'#how-it-works'  => __( 'Measurement', 'doppler_lidar' ),
-		'#data-quality'  => __( 'Analytics', 'doppler_lidar' ),
-		'#use-cases'     => __( 'Compliance', 'doppler_lidar' ),
-		'#contact'       => __( 'Contact', 'doppler_lidar' ),
+		home_url( '/#technology' )    => __( 'LiDAR Systems', 'doppler_lidar' ),
+		home_url( '/#how-it-works' )  => __( 'Measurement', 'doppler_lidar' ),
+		home_url( '/#data-quality' )  => __( 'Analytics', 'doppler_lidar' ),
+		home_url( '/#use-cases' )     => __( 'Compliance', 'doppler_lidar' ),
+		doppler_lidar_resources_url() => __( 'Research & Blog', 'doppler_lidar' ),
+		home_url( '/#contact' )       => __( 'Contact', 'doppler_lidar' ),
 	);
 	echo '<ul id="primary-menu" class="nav-menu">';
-	foreach ( $items as $hash => $label ) {
+	foreach ( $items as $url => $label ) {
 		printf(
 			'<li><a href="%s">%s</a></li>',
-			esc_url( $home . $hash ),
+			esc_url( $url ),
 			esc_html( $label )
 		);
 	}
@@ -574,6 +574,185 @@ function doppler_lidar_handle_fleet_request() {
 }
 add_action( 'wp_ajax_doppler_lidar_fleet', 'doppler_lidar_handle_fleet_request' );
 add_action( 'wp_ajax_nopriv_doppler_lidar_fleet', 'doppler_lidar_handle_fleet_request' );
+
+/**
+ * Permalink of the research archive page.
+ *
+ * @return string
+ */
+function doppler_lidar_resources_url() {
+	$page_id = (int) get_option( 'doppler_lidar_resources_page_id' );
+	if ( $page_id && 'publish' === get_post_status( $page_id ) ) {
+		return get_permalink( $page_id );
+	}
+
+	$page = get_page_by_path( 'resources' );
+	if ( $page instanceof WP_Post ) {
+		return get_permalink( $page );
+	}
+
+	return home_url( '/resources/' );
+}
+
+/**
+ * Estimated reading time for a post.
+ *
+ * @param int $post_id Post ID.
+ * @return string
+ */
+function doppler_lidar_reading_time( $post_id ) {
+	$words   = str_word_count( wp_strip_all_tags( (string) get_post_field( 'post_content', $post_id ) ) );
+	$minutes = max( 1, (int) ceil( $words / 200 ) );
+
+	return sprintf(
+		/* translators: %d: estimated minutes to read the article. */
+		__( '%d min read', 'doppler_lidar' ),
+		$minutes
+	);
+}
+
+/**
+ * Initials for the article byline.
+ *
+ * @param string $name Author display name.
+ * @return string
+ */
+function doppler_lidar_author_initials( $name ) {
+	$parts = preg_split( '/\s+/', trim( $name ) );
+	$parts = array_values( array_filter( (array) $parts ) );
+	if ( empty( $parts ) ) {
+		return '';
+	}
+	$initials = mb_strtoupper( mb_substr( $parts[0], 0, 1 ) );
+	if ( count( $parts ) > 1 ) {
+		$initials .= mb_strtoupper( mb_substr( $parts[ count( $parts ) - 1 ], 0, 1 ) );
+	}
+	return $initials;
+}
+
+/**
+ * Create the resources page and add it to the primary menu once.
+ */
+function doppler_lidar_bootstrap_resources() {
+	if ( ! get_option( 'doppler_lidar_resources_page_id' ) ) {
+		$existing = get_posts(
+			array(
+				'post_type'      => 'page',
+				'post_status'    => array( 'publish', 'draft', 'private' ),
+				'name'           => 'resources',
+				'posts_per_page' => 1,
+			)
+		);
+
+		if ( ! empty( $existing ) ) {
+			$page_id = (int) $existing[0]->ID;
+		} else {
+			$inserted = wp_insert_post(
+				array(
+					'post_title'   => __( 'Technical Insights & Research Archive', 'doppler_lidar' ),
+					'post_name'    => 'resources',
+					'post_status'  => 'publish',
+					'post_type'    => 'page',
+					'post_excerpt' => __( 'Empirical verification methodologies, sensor drift forensics, and operational campaign analyses. Calibrated for renewable lenders, met-ocean engineers, and bankable wind resource assessors.', 'doppler_lidar' ),
+				),
+				true
+			);
+			$page_id = is_wp_error( $inserted ) ? 0 : (int) $inserted;
+		}
+
+		if ( $page_id ) {
+			update_post_meta( $page_id, '_wp_page_template', 'page-templates/resources.php' );
+			update_option( 'doppler_lidar_resources_page_id', $page_id );
+		}
+	}
+
+	if ( get_option( 'doppler_lidar_resources_menu_item' ) ) {
+		return;
+	}
+
+	$locations = get_nav_menu_locations();
+	if ( empty( $locations['menu-1'] ) ) {
+		return;
+	}
+
+	$menu_id = (int) $locations['menu-1'];
+	$url     = doppler_lidar_resources_url();
+	$items   = wp_get_nav_menu_items( $menu_id );
+	foreach ( (array) $items as $item ) {
+		if ( $item instanceof WP_Post && false !== strpos( (string) $item->url, '/resources' ) ) {
+			update_option( 'doppler_lidar_resources_menu_item', 1 );
+			return;
+		}
+	}
+
+	$added = wp_update_nav_menu_item(
+		$menu_id,
+		0,
+		array(
+			'menu-item-title'  => __( 'Research & Blog', 'doppler_lidar' ),
+			'menu-item-url'    => $url,
+			'menu-item-status' => 'publish',
+			'menu-item-type'   => 'custom',
+		)
+	);
+
+	if ( ! is_wp_error( $added ) ) {
+		update_option( 'doppler_lidar_resources_menu_item', 1 );
+	}
+}
+add_action( 'init', 'doppler_lidar_bootstrap_resources' );
+
+/**
+ * Full-bleed layout for the research archive.
+ *
+ * @param string[] $classes Body classes.
+ * @return string[]
+ */
+function doppler_lidar_resources_body_class( $classes ) {
+	if ( is_page_template( 'page-templates/resources.php' ) ) {
+		$classes[] = 'wd-resources';
+	}
+	return $classes;
+}
+add_filter( 'body_class', 'doppler_lidar_resources_body_class' );
+
+/**
+ * Store a research-dispatch subscription request.
+ */
+function doppler_lidar_handle_dispatch_subscribe() {
+	if ( ! isset( $_POST['doppler_lidar_dispatch_nonce'] ) ) {
+		return;
+	}
+
+	$redirect = doppler_lidar_resources_url();
+
+	if ( ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['doppler_lidar_dispatch_nonce'] ) ), 'doppler_lidar_dispatch' ) ) {
+		wp_safe_redirect( add_query_arg( 'dispatch', 'error', $redirect ) );
+		exit;
+	}
+
+	if ( doppler_lidar_honeypot_filled() ) {
+		wp_safe_redirect( add_query_arg( 'dispatch', 'sent', $redirect ) );
+		exit;
+	}
+
+	$email = isset( $_POST['dispatch_email'] ) ? sanitize_email( wp_unslash( $_POST['dispatch_email'] ) ) : '';
+	if ( ! is_email( $email ) ) {
+		wp_safe_redirect( add_query_arg( 'dispatch', 'error', $redirect ) );
+		exit;
+	}
+
+	$sent = wp_mail(
+		get_option( 'admin_email' ),
+		'[Favionus] Research dispatch subscription',
+		'Subscribe this address to the Favionus monthly engineering dispatch: ' . $email,
+		array( 'Content-Type: text/plain; charset=UTF-8', 'Reply-To: ' . $email )
+	);
+
+	wp_safe_redirect( add_query_arg( 'dispatch', $sent ? 'sent' : 'error', $redirect ) );
+	exit;
+}
+add_action( 'template_redirect', 'doppler_lidar_handle_dispatch_subscribe' );
 
 /**
  * Implement the Custom Header feature.

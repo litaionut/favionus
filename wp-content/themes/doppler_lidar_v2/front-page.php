@@ -330,6 +330,8 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					alt="<?php esc_attr_e( 'Vertical wind profiling LiDAR installed beside a wind farm', 'doppler_lidar' ); ?>"
 					width="1200"
 					height="675"
+					loading="lazy"
+					decoding="async"
 				>
 				<span class="wd-field-shot__layer" aria-hidden="true">
 					<span class="wd-field-shot__grade"></span>

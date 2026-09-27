@@ -9,7 +9,7 @@
 
 if ( ! defined( '_S_VERSION' ) ) {
 	// Replace the version number of the theme on each release.
-	define( '_S_VERSION', '1.7.3' );
+	define( '_S_VERSION', '1.7.4' );
 }
 
 /**
@@ -198,6 +198,7 @@ function doppler_lidar_scripts() {
 		array(),
 		null
 	);
+
 	wp_enqueue_style( 'doppler_lidar-style', get_stylesheet_uri(), array(), _S_VERSION );
 	wp_enqueue_style(
 		'doppler_lidar-main',
@@ -264,6 +265,77 @@ function doppler_lidar_scripts() {
 	}
 }
 add_action( 'wp_enqueue_scripts', 'doppler_lidar_scripts' );
+
+/**
+ * Load Material Symbols asynchronously (non-blocking for LCP).
+ *
+ * @param string $html   Link tag HTML.
+ * @param string $handle Style handle.
+ * @return string
+ */
+function doppler_lidar_async_icon_css( $html, $handle ) {
+	if ( 'doppler_lidar-icons' !== $handle ) {
+		return $html;
+	}
+	$async = preg_replace( '/\smedia=(["\'])all\1/', ' media="print" onload="this.media=\'all\'"', $html, 1 );
+	if ( ! is_string( $async ) || $async === $html ) {
+		return $html;
+	}
+	return $async . '<noscript>' . $html . '</noscript>';
+}
+add_filter( 'style_loader_tag', 'doppler_lidar_async_icon_css', 10, 2 );
+
+/**
+ * Preconnect / preload critical assets for faster mobile LCP (header text + texture).
+ */
+function doppler_lidar_resource_hints( $urls, $relation_type ) {
+	if ( 'preconnect' === $relation_type ) {
+		$urls[] = array(
+			'href'        => 'https://fonts.googleapis.com',
+			'crossorigin' => 'anonymous',
+		);
+		$urls[] = array(
+			'href'        => 'https://fonts.gstatic.com',
+			'crossorigin' => 'anonymous',
+		);
+	}
+	return $urls;
+}
+add_filter( 'wp_resource_hints', 'doppler_lidar_resource_hints', 10, 2 );
+
+/**
+ * Preload theme CSS + felt texture on the front page (LCP path).
+ */
+function doppler_lidar_preload_lcp_assets() {
+	if ( ! is_front_page() ) {
+		return;
+	}
+	$main = get_template_directory_uri() . '/css/main.css?ver=' . rawurlencode( _S_VERSION );
+	$felt = get_template_directory_uri() . '/images/felt.png?ver=' . rawurlencode( _S_VERSION );
+	printf(
+		'<link rel="preload" href="%s" as="style" />' . "\n",
+		esc_url( $main )
+	);
+	printf(
+		'<link rel="preload" href="%s" as="image" type="image/png" fetchpriority="high" />' . "\n",
+		esc_url( $felt )
+	);
+}
+add_action( 'wp_head', 'doppler_lidar_preload_lcp_assets', 1 );
+
+/**
+ * Contact Form 7 is not used in theme templates — dequeue its CSS/JS sitewide when inactive on the view.
+ */
+function doppler_lidar_dequeue_unused_cf7() {
+	if ( is_admin() ) {
+		return;
+	}
+	wp_dequeue_style( 'contact-form-7' );
+	wp_deregister_style( 'contact-form-7' );
+	wp_dequeue_script( 'contact-form-7' );
+	wp_deregister_script( 'contact-form-7' );
+}
+add_action( 'wp_enqueue_scripts', 'doppler_lidar_dequeue_unused_cf7', 100 );
 
 /**
  * Fallback primary navigation matching the homepage mockup.

@@ -2696,17 +2696,16 @@ body.wd-resources .site-main {
 	margin-top: 4.5rem;
 	margin-bottom: 4.5rem;
 	padding: 3.5rem 0;
-	background-color: var(--wd-surface-dim);
-	background-image: none;
+	background: transparent;
 	border-top: var(--wd-line) solid var(--wd-outline-variant);
 	border-bottom: var(--wd-line) solid var(--wd-outline-variant);
 }
 
 .wd-archive__dispatch-box {
-	display: flex;
-	flex-direction: column;
+	display: grid;
+	grid-template-columns: 1fr;
 	gap: 1.75rem;
-	max-width: 40rem;
+	align-items: center;
 	background: transparent;
 	border: 0;
 	padding: 0;
@@ -2765,9 +2764,14 @@ body.wd-resources .site-main {
 	}
 
 	.wd-archive__hero-grid,
-	.wd-archive__feature {
+	.wd-archive__feature,
+	.wd-archive__dispatch-box {
 		grid-template-columns: 1.4fr 1fr;
 		align-items: center;
+	}
+
+	.wd-archive__dispatch-box {
+		gap: 3rem;
 	}
 
 	.wd-archive__grid {

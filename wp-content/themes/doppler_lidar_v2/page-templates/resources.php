@@ -349,7 +349,7 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 				</div>
 				<div class="wd-archive__dispatch-form">
 					<?php if ( 'sent' === $dispatch ) : ?>
-						<p class="wd-body" role="status"><?php esc_html_e( 'Subscription received. We will use this address for the engineering dispatch.', 'doppler_lidar' ); ?></p>
+						<p class="wd-body" role="status"><?php esc_html_e( 'Success', 'doppler_lidar' ); ?></p>
 					<?php elseif ( 'error' === $dispatch ) : ?>
 						<p class="wd-body" role="alert"><?php esc_html_e( 'Enter a valid work email and try again.', 'doppler_lidar' ); ?></p>
 					<?php endif; ?>

@@ -1,0 +1,19 @@
+# Favionus
+> Turnkey onshore wind LiDAR measurement campaigns. Bankable, quality-controlled wind data for developers, lenders and engineers.
+
+Favionus plans, deploys, monitors and delivers IEC-classified vertical profiling LiDAR campaigns for wind resource assessment, met mast complement, repowering and site investigation.
+
+## Site
+- Home: https://favionus.com/
+- Contact: https://favionus.com/#contact
+- Email: contact@favionus.com
+- Location: Bucharest, Romania — campaigns across Europe
+
+## Services
+- https://favionus.com/wind-lidar-measurement-campaigns/
+- https://favionus.com/wind-resource-assessment/
+- https://favionus.com/met-mast-complement/
+- https://favionus.com/repowering-wind-measurement/
+
+## Standards & keywords
+IEC-classified LiDAR, vertical profiling, bankable wind data, remote monitoring, quality-controlled datasets, energy yield assessment support.

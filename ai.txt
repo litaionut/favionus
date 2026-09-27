@@ -1,0 +1,6 @@
+# ai.txt for favionus.com
+User-Agent: *
+Allow: /
+Contact: contact@favionus.com
+Sitemap: https://favionus.com/sitemap_index.xml
+llms: https://favionus.com/llms.txt

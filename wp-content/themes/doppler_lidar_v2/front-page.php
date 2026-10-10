@@ -49,7 +49,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					}
 				} else {
 					?>
-					<img src="<?php echo esc_url( $lidar ); ?>" alt="<?php esc_attr_e( 'ZX-300e LiDAR Unit', 'doppler_lidar' ); ?>">
+					<img src="<?php echo esc_url( $lidar ); ?>" alt="<?php esc_attr_e( 'Vertical profiling wind LiDAR unit', 'doppler_lidar' ); ?>">
 					<?php
 				}
 				?>
@@ -97,7 +97,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 			<div class="wd-center">
 				<h2 id="problem-title" class="wd-headline-lg"><?php esc_html_e( 'Reliable wind data, less complexity', 'doppler_lidar' ); ?></h2>
 				<p class="wd-body">
-					<?php esc_html_e( 'A successful wind measurement campaign takes more than a LiDAR. Favionus combines vertical profiling LiDAR, autonomous power, remote monitoring and wind engineering expertise into one managed service. You get wind data for your project without running the campaign yourself.', 'doppler_lidar' ); ?>
+					<?php esc_html_e( 'A successful wind measurement campaign takes more than a LiDAR. Favionus combines vertical profiling LiDAR, autonomous power, remote monitoring and wind engineering expertise into one managed service. You get wind data for your project without running the campaign yourself. Prefer to run it in-house? We also offer wind LiDAR rental.', 'doppler_lidar' ); ?>
 				</p>
 			</div>
 			<div class="wd-feature-row">
@@ -170,7 +170,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				<div class="wd-dash" aria-label="<?php esc_attr_e( 'Wind Data Analytics Dashboard', 'doppler_lidar' ); ?>">
 					<div class="wd-dash__head">
 						<div>
-							<p class="wd-dash__title"><?php esc_html_e( 'Executive Summary', 'doppler_lidar' ); ?></p>
+							<p class="wd-dash__title"><?php esc_html_e( 'Executive Summary (sample data)', 'doppler_lidar' ); ?></p>
 							<p class="wd-caption wd-dash__meta">
 								<span class="material-symbols-outlined" aria-hidden="true">location_on</span>
 								<?php esc_html_e( 'Example site | Sample data', 'doppler_lidar' ); ?>
@@ -195,8 +195,8 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 									<circle class="wd-gauge__value" cx="50" cy="50" r="42"></circle>
 								</svg>
 								<div class="wd-gauge__readout">
-									<span>99.9%</span>
-									<small><?php esc_html_e( 'Uptime', 'doppler_lidar' ); ?></small>
+									<span>98.7%</span>
+									<small><?php esc_html_e( 'Sample', 'doppler_lidar' ); ?></small>
 								</div>
 							</div>
 						</div>
@@ -247,13 +247,13 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 									</tr>
 									<tr>
 										<td><?php esc_html_e( 'Wind Direction', 'doppler_lidar' ); ?></td>
-										<td>118 m</td>
+										<td>120 m</td>
 										<td>215° SW</td>
 									</tr>
 									<tr>
 										<td><?php esc_html_e( 'Turbulence Intensity', 'doppler_lidar' ); ?></td>
 										<td>120 m</td>
-										<td>0.11</td>
+										<td>0.12</td>
 									</tr>
 								</tbody>
 							</table>
@@ -318,7 +318,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					<span class="wd-label wd-kicker__text"><?php esc_html_e( 'Technology', 'doppler_lidar' ); ?></span>
 				</div>
 				<h2 id="tech-title" class="wd-headline-lg"><?php esc_html_e( 'Vertical profiling LiDAR technology', 'doppler_lidar' ); ?></h2>
-				<p class="wd-body"><?php esc_html_e( 'Our campaigns use industry-proven vertical profiling Doppler LiDAR that measures the wind profile across modern turbine rotor heights. That makes it a practical alternative or complement to a tall met mast, without the tower and with fewer civil works.', 'doppler_lidar' ); ?></p>
+				<p class="wd-body"><?php esc_html_e( 'We work with LiDAR units from leading manufacturers, matched to your site and hub height, as a full turnkey campaign or as wind LiDAR rental. Vertical profiling Doppler LiDAR measures the wind profile across modern turbine rotor heights, which makes it a practical alternative or complement to a tall met mast, without the tower and with fewer civil works.', 'doppler_lidar' ); ?></p>
 				<a class="wd-text-link" href="#technology">
 					<?php esc_html_e( 'Explore the technology', 'doppler_lidar' ); ?>
 					<span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
@@ -362,7 +362,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				<div class="wd-report__top">
 					<div>
 						<p class="wd-report__brand"><?php esc_html_e( 'Favionus', 'doppler_lidar' ); ?></p>
-						<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Campaign Status Report', 'doppler_lidar' ); ?></p>
+						<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Campaign Status Report (example)', 'doppler_lidar' ); ?></p>
 					</div>
 					<div class="wd-report__metric">
 						<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Availability', 'doppler_lidar' ); ?></p>
@@ -415,15 +415,15 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					<div class="wd-report__stats">
 						<div>
 							<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Mean Wind Speed', 'doppler_lidar' ); ?></p>
-							<p class="wd-data">8.42 m/s</p>
+							<p class="wd-data">8.4 m/s</p>
 						</div>
 						<div>
 							<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Turbulence Intensity', 'doppler_lidar' ); ?></p>
-							<p class="wd-data">0.124</p>
+							<p class="wd-data">0.12</p>
 						</div>
 						<div>
-							<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'TI Class', 'doppler_lidar' ); ?></p>
-							<p class="wd-data"><?php esc_html_e( 'IEC Class A', 'doppler_lidar' ); ?></p>
+							<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Turbulence category (example)', 'doppler_lidar' ); ?></p>
+							<p class="wd-data"><?php esc_html_e( 'A', 'doppler_lidar' ); ?></p>
 						</div>
 					</div>
 				</div>

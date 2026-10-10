@@ -4,11 +4,15 @@ Favionus delivers **turnkey onshore wind LiDAR measurement campaigns**: campaign
 
 ## What a turnkey LiDAR campaign includes
 
-- IEC-classified vertical profiling LiDAR technology
+- IEC-classified vertical profiling LiDAR units from leading manufacturers, matched to your site and hub height
 - Documented commissioning and decommissioning
 - Continuous remote monitoring of system health and data streams
 - Systematic quality control and traceable campaign reporting
 - Structured deliverables for energy yield and investment decisions
+
+## Wind LiDAR rental
+
+Prefer to run the measurement campaign yourself? Favionus also offers **wind LiDAR rental**: LiDAR units from leading manufacturers, matched to your site and hub height, for your own team or consultant to operate.
 
 ## How a campaign works
 

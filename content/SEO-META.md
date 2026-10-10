@@ -5,7 +5,7 @@ Kept out of the .md files because mu-plugins/favionus-seo.php converts those fil
 ## content/pages/wind-lidar-measurement-campaigns.md
 - Slug: /wind-lidar-measurement-campaigns/   Template: full width
 - SEO title (Yoast): Wind LiDAR Measurement Campaigns, Onshore – Favionus
-- Meta description (Yoast): Onshore wind LiDAR campaigns from planning to QC'd data: vertical profiling LiDAR, autonomous power and reporting aligned with IEC 61400-50-2.
+- Meta description (Yoast): Turnkey onshore wind LiDAR campaigns and wind LiDAR rental: LiDAR units from leading manufacturers, autonomous power, monitoring and QC'd data. (143 chars)
 - TODO [confirm]: "Data quality and standards" section (IEC 61400-50-2 classification and verification process) and "Deliverables" section (formats, intervals). Waiting for Florin.
 - TODO [confirm]: FAQ (campaign duration, terrain suitability, permits in Romania, countries, number of units).
 

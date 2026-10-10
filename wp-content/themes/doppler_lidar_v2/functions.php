@@ -781,3 +781,8 @@ if ( defined( 'JETPACK__VERSION' ) ) {
 	require get_template_directory() . '/inc/jetpack.php';
 }
 
+
+/**
+ * Romanian (/ro/) strings, lang attribute, hreflang and language switcher.
+ */
+require get_template_directory() . '/inc/seo-ro.php';

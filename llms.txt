@@ -10,10 +10,11 @@ Favionus plans, deploys, monitors and delivers IEC-classified vertical profiling
 - Location: Bucharest, Romania — campaigns across Europe
 
 ## Services
-- https://favionus.com/wind-lidar-measurement-campaigns/
-- https://favionus.com/wind-resource-assessment/
 - https://favionus.com/met-mast-complement/
-- https://favionus.com/repowering-wind-measurement/
+
+## Resources
+- https://favionus.com/resources/
+- https://favionus.com/lidar-or-a-met-mast/ (LiDAR or Met Mast? How to Choose for Your Wind Project)
 
 ## Standards & keywords
 IEC-classified LiDAR, vertical profiling, bankable wind data, remote monitoring, quality-controlled datasets, energy yield assessment support.

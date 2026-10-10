@@ -2805,3 +2805,8 @@ body.wd-resources .site-main {
 		padding-right: 2rem;
 	}
 }
+
+/* Full-width page template (service + legal pages) */
+.wd-page-full { padding-block: 4rem; }
+.wd-page-full .entry-content { max-width: 760px; }
+.wd-page-full .entry-content h2 { margin-top: 2.25rem; }

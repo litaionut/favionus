@@ -16,7 +16,7 @@ $search      = isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q']
 $paged       = isset( $_GET['archive_page'] ) ? max( 1, absint( $_GET['archive_page'] ) ) : 1;
 $dispatch    = isset( $_GET['dispatch'] ) ? sanitize_key( wp_unslash( $_GET['dispatch'] ) ) : '';
 
-$lede = __( 'Empirical verification methodologies, sensor drift forensics, and operational campaign analyses. Calibrated for renewable lenders, met-ocean engineers, and bankable wind resource assessors.', 'doppler_lidar' );
+$lede = __( 'Practical guides on wind LiDAR campaigns, measurement data quality and wind resource assessment, written for onshore wind developers, lenders and engineers.', 'doppler_lidar' );
 if ( $page instanceof WP_Post && has_excerpt( $page ) ) {
 	$lede = get_the_excerpt( $page );
 }
@@ -97,10 +97,6 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 				<span class="wd-archive__mark" aria-hidden="true"></span>
 				<span class="wd-label"><?php esc_html_e( 'Technical field notes & insights', 'doppler_lidar' ); ?></span>
 			</div>
-			<span class="wd-archive__badge">
-				<span class="material-symbols-outlined" aria-hidden="true">verified</span>
-				<?php esc_html_e( 'IEC 61400-12-1', 'doppler_lidar' ); ?>
-			</span>
 		</div>
 	</div>
 
@@ -108,7 +104,7 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 		<div class="wd-container wd-archive__hero-grid">
 			<div class="wd-archive__intro">
 				<div class="wd-kicker">
-					<span class="wd-label wd-kicker__text wd-kicker__text--primary"><?php esc_html_e( '[Metrological archive index]', 'doppler_lidar' ); ?></span>
+					<span class="wd-label wd-kicker__text wd-kicker__text--primary"><?php esc_html_e( 'Research & field notes', 'doppler_lidar' ); ?></span>
 					<span class="wd-kicker__line" aria-hidden="true"></span>
 				</div>
 				<h1 id="archive-title" class="wd-headline-xl">
@@ -116,7 +112,7 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 					if ( $page instanceof WP_Post ) {
 						echo esc_html( get_the_title( $page ) );
 					} else {
-						esc_html_e( 'Technical Insights & Research Archive', 'doppler_lidar' );
+						esc_html_e( 'Wind LiDAR & Wind Resource Assessment Resources', 'doppler_lidar' );
 					}
 					?>
 				</h1>
@@ -158,7 +154,7 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 				</a>
 				<?php foreach ( $topics as $category ) : ?>
 					<a class="wd-archive__chip<?php echo $topic === $category->slug ? ' is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( array_filter( array( 'topic' => $category->slug, 'q' => $search ) ), $archive_url ) ); ?>">
-						<?php echo esc_html( $category->name . ' (' . sprintf( '%02d', (int) $category->count ) . ')' ); ?>
+						<?php echo esc_html( $category->name . ' (' . (int) $category->count . ')' ); ?>
 					</a>
 				<?php endforeach; ?>
 			</nav>
@@ -183,9 +179,8 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 				<div class="wd-archive__section-head">
 					<div class="wd-archive__section-label">
 						<span class="wd-archive__mark" aria-hidden="true"></span>
-						<span class="wd-label"><?php esc_html_e( 'Featured paper', 'doppler_lidar' ); ?></span>
+						<span class="wd-label"><?php esc_html_e( 'Featured article', 'doppler_lidar' ); ?></span>
 					</div>
-					<span class="wd-label"><?php echo esc_html( get_the_date( 'd M Y', $featured_id ) ); ?></span>
 				</div>
 				<article class="wd-archive__feature">
 					<span class="wd-archive__corner wd-archive__corner--tl" aria-hidden="true"></span>
@@ -233,7 +228,7 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 			<div class="wd-archive__section-head">
 				<div class="wd-archive__section-label">
 					<span class="wd-archive__mark wd-archive__mark--muted" aria-hidden="true"></span>
-					<h2 id="archive-list-title" class="wd-label"><?php esc_html_e( 'All archived papers', 'doppler_lidar' ); ?></h2>
+					<h2 id="archive-list-title" class="wd-label"><?php esc_html_e( 'All articles', 'doppler_lidar' ); ?></h2>
 				</div>
 				<?php if ( $grid->found_posts ) : ?>
 					<span class="wd-label">
@@ -344,7 +339,7 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 						<span class="material-symbols-outlined" aria-hidden="true">mail</span>
 						<?php esc_html_e( 'Get the engineering notes by email', 'doppler_lidar' ); ?>
 					</p>
-					<h2 id="dispatch-title" class="wd-headline-lg"><?php esc_html_e( 'Favionus monthly engineering dispatch', 'doppler_lidar' ); ?></h2>
+					<h2 id="dispatch-title" class="wd-headline-lg"><?php esc_html_e( 'The Favionus engineering dispatch', 'doppler_lidar' ); ?></h2>
 					<p class="wd-body"><?php esc_html_e( 'Research papers, campaign notes, and data-quality standards for wind project developers and asset engineers.', 'doppler_lidar' ); ?></p>
 				</div>
 				<div class="wd-archive__dispatch-form">
@@ -357,7 +352,7 @@ $fallback_image = get_template_directory_uri() . '/images/archive-lidar-profile.
 						<form method="post" action="<?php echo esc_url( $archive_url ); ?>">
 							<?php wp_nonce_field( 'doppler_lidar_dispatch', 'doppler_lidar_dispatch_nonce' ); ?>
 							<p class="wd-hp" aria-hidden="true">
-								<label><?php esc_html_e( 'Fax', 'doppler_lidar' ); ?>
+								<label><?php /* Honeypot: intentionally no visible label text. */ ?>
 									<input type="text" name="wd_hp_fax" value="" tabindex="-1" autocomplete="off" inputmode="none">
 								</label>
 							</p>

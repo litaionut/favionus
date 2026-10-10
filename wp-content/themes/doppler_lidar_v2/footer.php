@@ -17,7 +17,7 @@ $phone    = trim( (string) get_theme_mod( 'doppler_lidar_phone', '' ) );
 			<div class="site-footer__grid">
 				<div class="site-footer__brand">
 					<a class="site-footer__brand-name" href="<?php echo esc_url( $home ); ?>"><?php esc_html_e( 'Favionus', 'doppler_lidar' ); ?></a>
-					<p class="wd-body"><?php esc_html_e( 'Wind measurement campaigns for onshore wind projects. Delivering bankable data through technical excellence.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'Turnkey LiDAR wind measurement campaigns for onshore wind projects across Europe.', 'doppler_lidar' ); ?></p>
 					<div class="site-footer__contact">
 						<p class="wd-caption">
 							<span class="material-symbols-outlined" aria-hidden="true">location_on</span>
@@ -44,7 +44,7 @@ $phone    = trim( (string) get_theme_mod( 'doppler_lidar_phone', '' ) );
 				<div>
 					<p class="wd-label"><?php esc_html_e( 'Company', 'doppler_lidar' ); ?></p>
 					<nav class="site-footer__links" aria-label="<?php esc_attr_e( 'Footer', 'doppler_lidar' ); ?>">
-						<a href="<?php echo esc_url( $home . '#how-it-works' ); ?>"><?php esc_html_e( 'LiDAR Campaigns', 'doppler_lidar' ); ?></a>
+						<a href="<?php echo esc_url( $home . '#how-it-works' ); ?>"><?php esc_html_e( 'How it works', 'doppler_lidar' ); ?></a>
 						<a href="<?php echo esc_url( $home . '#data-quality' ); ?>"><?php esc_html_e( 'Data Quality', 'doppler_lidar' ); ?></a>
 						<a href="<?php echo esc_url( $home . '#technology' ); ?>"><?php esc_html_e( 'Technology', 'doppler_lidar' ); ?></a>
 						<a href="<?php echo esc_url( home_url( '/wind-lidar-measurement-campaigns/' ) ); ?>"><?php esc_html_e( 'Services', 'doppler_lidar' ); ?></a>
@@ -57,8 +57,10 @@ $phone    = trim( (string) get_theme_mod( 'doppler_lidar_phone', '' ) );
 					<p class="wd-label"><?php esc_html_e( 'Legal Information', 'doppler_lidar' ); ?></p>
 					<div class="site-footer__legal">
 						<p><?php esc_html_e( 'Favionus S.R.L.', 'doppler_lidar' ); ?></p>
-						<p><?php esc_html_e( 'Reg. No: J40/12345/2024', 'doppler_lidar' ); ?></p>
-						<p><?php esc_html_e( 'VAT: RO123456789', 'doppler_lidar' ); ?></p>
+						<?php
+						// TODO(Florin): add the real ONRC registration number (Reg. No: J40/…) and CUI/VAT number (RO…) here.
+						// The previous placeholder values were removed so that no fake numbers are shown.
+						?>
 					</div>
 					<div class="site-footer__legal-nav">
 						<a href="<?php echo esc_url( $terms ); ?>"><?php esc_html_e( 'Terms', 'doppler_lidar' ); ?></a>
@@ -69,7 +71,6 @@ $phone    = trim( (string) get_theme_mod( 'doppler_lidar_phone', '' ) );
 
 			<div class="site-footer__bottom">
 				<p class="site-footer__copy">&copy; <?php echo esc_html( gmdate( 'Y' ) ); ?> <?php esc_html_e( 'Favionus. All rights reserved.', 'doppler_lidar' ); ?></p>
-				<p class="wd-caption"><?php esc_html_e( 'Aero-Technical Precision Design System', 'doppler_lidar' ); ?></p>
 			</div>
 		</div>
 	</footer>

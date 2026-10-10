@@ -16,7 +16,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 	<section class="wd-hero wd-container" aria-labelledby="hero-title">
 		<div class="wd-hero__copy">
 			<div class="wd-kicker">
-				<span class="wd-label wd-kicker__text"><?php esc_html_e( 'Turnkey Solution', 'doppler_lidar' ); ?></span>
+				<span class="wd-label wd-kicker__text"><?php esc_html_e( 'Turnkey wind LiDAR campaigns', 'doppler_lidar' ); ?></span>
 				<span class="wd-kicker__line" aria-hidden="true"></span>
 			</div>
 			<h1 id="hero-title" class="wd-headline-xl">
@@ -24,12 +24,12 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				<?php esc_html_e( 'Delivered turnkey.', 'doppler_lidar' ); ?>
 			</h1>
 			<p class="wd-body wd-lede--narrow">
-				<?php esc_html_e( 'Complete LiDAR measurement campaigns for onshore wind projects — from deployment and monitoring to quality-controlled data delivery.', 'doppler_lidar' ); ?>
+				<?php esc_html_e( 'Complete wind LiDAR measurement campaigns for onshore wind projects, from campaign design and deployment to 24/7 remote monitoring and quality-controlled data delivery. Based in Bucharest, working across Europe.', 'doppler_lidar' ); ?>
 			</p>
 			<div class="wd-hero__actions">
 				<a class="wd-btn wd-btn--primary wd-btn--lg" href="#contact"><?php esc_html_e( 'Plan a campaign', 'doppler_lidar' ); ?></a>
 				<button type="button" class="wd-btn wd-btn--ghost wd-btn--lg" data-wd-modal="fleet-modal">
-					<?php esc_html_e( 'Check fleet availability', 'doppler_lidar' ); ?>
+					<?php esc_html_e( 'Check LiDAR availability', 'doppler_lidar' ); ?>
 					<span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
 				</button>
 			</div>
@@ -49,7 +49,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					}
 				} else {
 					?>
-					<img src="<?php echo esc_url( $lidar ); ?>" alt="<?php esc_attr_e( 'ZX-300e LiDAR Unit', 'doppler_lidar' ); ?>">
+					<img src="<?php echo esc_url( $lidar ); ?>" alt="<?php esc_attr_e( 'Vertical profiling wind LiDAR unit', 'doppler_lidar' ); ?>">
 					<?php
 				}
 				?>
@@ -95,9 +95,9 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 	<section class="wd-section wd-section--auto" aria-labelledby="problem-title">
 		<div class="wd-container">
 			<div class="wd-center">
-				<h2 id="problem-title" class="wd-headline-lg"><?php esc_html_e( 'Reliable data. Less complexity.', 'doppler_lidar' ); ?></h2>
+				<h2 id="problem-title" class="wd-headline-lg"><?php esc_html_e( 'Reliable wind data, less complexity', 'doppler_lidar' ); ?></h2>
 				<p class="wd-body">
-					<?php esc_html_e( 'A successful wind measurement campaign requires more than a LiDAR. We combine measurement technology, autonomous power, remote monitoring and wind engineering expertise into one managed service.', 'doppler_lidar' ); ?>
+					<?php esc_html_e( 'A successful wind measurement campaign takes more than a LiDAR. Favionus combines vertical profiling LiDAR, autonomous power, remote monitoring and wind engineering expertise into one managed service. You get wind data for your project without running the campaign yourself. Prefer to run it in-house? We also offer wind LiDAR rental.', 'doppler_lidar' ); ?>
 				</p>
 			</div>
 			<div class="wd-feature-row">
@@ -107,11 +107,11 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				</div>
 				<div class="wd-feature-row__mid">
 					<h3 class="wd-label"><?php esc_html_e( 'Continuous Monitoring', 'doppler_lidar' ); ?></h3>
-					<p class="wd-body"><?php esc_html_e( 'Remote monitoring of equipment performance and incoming data.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'Remote monitoring of equipment health and incoming wind data.', 'doppler_lidar' ); ?></p>
 				</div>
 				<div>
 					<h3 class="wd-label"><?php esc_html_e( 'Quality-Controlled Data', 'doppler_lidar' ); ?></h3>
-					<p class="wd-body"><?php esc_html_e( 'Structured datasets and reporting ready for your engineering workflow.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'Structured datasets and reporting ready for your wind resource assessment workflow.', 'doppler_lidar' ); ?></p>
 				</div>
 			</div>
 		</div>
@@ -119,7 +119,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 
 	<section id="how-it-works" class="wd-section wd-section--auto wd-section--border" aria-labelledby="how-title">
 		<div class="wd-container">
-			<h2 id="how-title" class="wd-headline-lg wd-section-title"><?php esc_html_e( 'From site to dataset.', 'doppler_lidar' ); ?></h2>
+			<h2 id="how-title" class="wd-headline-lg wd-section-title"><?php esc_html_e( 'From site to dataset: how a LiDAR campaign works', 'doppler_lidar' ); ?></h2>
 			<div class="wd-timeline">
 				<div class="wd-timeline__line" aria-hidden="true"></div>
 				<div class="wd-step">
@@ -130,17 +130,17 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				<div class="wd-step">
 					<span class="wd-step__dot" aria-hidden="true"><span></span></span>
 					<h3 class="wd-label wd-step__label"><?php esc_html_e( '02 — Deploy', 'doppler_lidar' ); ?></h3>
-					<p class="wd-body"><?php esc_html_e( 'We transport, install and commission the LiDAR and autonomous power system.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'We transport, install and commission the LiDAR and its autonomous power system.', 'doppler_lidar' ); ?></p>
 				</div>
 				<div class="wd-step">
 					<span class="wd-step__dot" aria-hidden="true"><span></span></span>
 					<h3 class="wd-label wd-step__label"><?php esc_html_e( '03 — Monitor', 'doppler_lidar' ); ?></h3>
-					<p class="wd-body"><?php esc_html_e( 'System performance and incoming measurements are continuously monitored.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'System performance and incoming measurements are monitored continuously.', 'doppler_lidar' ); ?></p>
 				</div>
 				<div class="wd-step">
 					<span class="wd-step__dot" aria-hidden="true"><span></span></span>
 					<h3 class="wd-label wd-step__label"><?php esc_html_e( '04 — Deliver', 'doppler_lidar' ); ?></h3>
-					<p class="wd-body"><?php esc_html_e( 'Quality-controlled wind data and campaign reporting are delivered throughout the project.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'Quality-controlled wind data and campaign reports throughout the project.', 'doppler_lidar' ); ?></p>
 				</div>
 			</div>
 		</div>
@@ -149,8 +149,8 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 	<section id="data-quality" class="wd-section wd-section--auto wd-section--border" aria-labelledby="quality-title">
 		<div class="wd-container wd-two">
 			<div class="wd-two__copy">
-				<h2 id="quality-title" class="wd-headline-lg"><?php esc_html_e( 'Data you can build decisions on.', 'doppler_lidar' ); ?></h2>
-				<p class="wd-body wd-lede--narrow"><?php esc_html_e( 'Wind measurements influence energy yield assessments, turbine selection and investment decisions. Campaign quality cannot be an afterthought.', 'doppler_lidar' ); ?></p>
+				<h2 id="quality-title" class="wd-headline-lg"><?php esc_html_e( 'Wind data you can base investment decisions on', 'doppler_lidar' ); ?></h2>
+				<p class="wd-body wd-lede--narrow"><?php esc_html_e( 'Wind measurements feed energy yield assessments, turbine selection and investment decisions, so campaign quality can\'t be an afterthought.', 'doppler_lidar' ); ?></p>
 				<ul class="wd-checklist">
 					<li><span class="material-symbols-outlined" aria-hidden="true">check_circle</span><span><?php esc_html_e( 'IEC-classified LiDAR technology', 'doppler_lidar' ); ?></span></li>
 					<li><span class="material-symbols-outlined" aria-hidden="true">description</span><span><?php esc_html_e( 'Documented commissioning', 'doppler_lidar' ); ?></span></li>
@@ -170,15 +170,15 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				<div class="wd-dash" aria-label="<?php esc_attr_e( 'Wind Data Analytics Dashboard', 'doppler_lidar' ); ?>">
 					<div class="wd-dash__head">
 						<div>
-							<p class="wd-dash__title"><?php esc_html_e( 'Executive Summary', 'doppler_lidar' ); ?></p>
+							<p class="wd-dash__title"><?php esc_html_e( 'Executive Summary (sample data)', 'doppler_lidar' ); ?></p>
 							<p class="wd-caption wd-dash__meta">
 								<span class="material-symbols-outlined" aria-hidden="true">location_on</span>
-								<?php esc_html_e( 'Site Alpha-7 | 45.4215° N, 75.6972° W', 'doppler_lidar' ); ?>
+								<?php esc_html_e( 'Example site | Sample data', 'doppler_lidar' ); ?>
 							</p>
 						</div>
 						<div class="wd-dash__status">
 							<span class="wd-label"><?php esc_html_e( 'Status', 'doppler_lidar' ); ?></span>
-							<span><?php esc_html_e( 'Bankable data: verified', 'doppler_lidar' ); ?></span>
+							<span><?php esc_html_e( 'Sample data', 'doppler_lidar' ); ?></span>
 						</div>
 					</div>
 
@@ -195,8 +195,8 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 									<circle class="wd-gauge__value" cx="50" cy="50" r="42"></circle>
 								</svg>
 								<div class="wd-gauge__readout">
-									<span>99.9%</span>
-									<small><?php esc_html_e( 'Uptime', 'doppler_lidar' ); ?></small>
+									<span>98.7%</span>
+									<small><?php esc_html_e( 'Sample', 'doppler_lidar' ); ?></small>
 								</div>
 							</div>
 						</div>
@@ -247,13 +247,13 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 									</tr>
 									<tr>
 										<td><?php esc_html_e( 'Wind Direction', 'doppler_lidar' ); ?></td>
-										<td>118 m</td>
+										<td>120 m</td>
 										<td>215° SW</td>
 									</tr>
 									<tr>
 										<td><?php esc_html_e( 'Turbulence Intensity', 'doppler_lidar' ); ?></td>
 										<td>120 m</td>
-										<td>0.11</td>
+										<td>0.12</td>
 									</tr>
 								</tbody>
 							</table>
@@ -280,19 +280,19 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 
 	<section id="use-cases" class="wd-section wd-section--auto wd-section--border" aria-labelledby="usecases-title">
 		<div class="wd-container">
-			<h2 id="usecases-title" class="wd-headline-lg wd-section-title"><?php esc_html_e( 'Built for real wind projects.', 'doppler_lidar' ); ?></h2>
+			<h2 id="usecases-title" class="wd-headline-lg wd-section-title"><?php esc_html_e( 'Built for real onshore wind projects', 'doppler_lidar' ); ?></h2>
 			<div class="wd-cases">
 				<article class="wd-case">
 					<span class="wd-case__num" aria-hidden="true">01</span>
 					<span class="material-symbols-outlined" aria-hidden="true">assessment</span>
 					<h3 class="wd-label"><?php esc_html_e( 'Wind Resource Assessment', 'doppler_lidar' ); ?></h3>
-					<p class="wd-body"><?php esc_html_e( 'Collect wind measurements for greenfield project development.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'On-site wind measurements for greenfield wind farm development.', 'doppler_lidar' ); ?></p>
 				</article>
 				<article class="wd-case">
 					<span class="wd-case__num" aria-hidden="true">02</span>
 					<span class="material-symbols-outlined" aria-hidden="true">height</span>
 					<h3 class="wd-label"><?php esc_html_e( 'Met Mast Complement', 'doppler_lidar' ); ?></h3>
-					<p class="wd-body"><?php esc_html_e( 'Extend measurement heights and improve understanding of the rotor-swept wind profile.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'Measure across the full rotor-swept height alongside an existing mast.', 'doppler_lidar' ); ?></p>
 				</article>
 				<article class="wd-case">
 					<span class="wd-case__num" aria-hidden="true">03</span>
@@ -304,7 +304,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					<span class="wd-case__num" aria-hidden="true">04</span>
 					<span class="material-symbols-outlined" aria-hidden="true">explore</span>
 					<h3 class="wd-label"><?php esc_html_e( 'Site Investigation', 'doppler_lidar' ); ?></h3>
-					<p class="wd-body"><?php esc_html_e( 'Quickly characterise prospective wind farm locations.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'Characterise prospective wind farm sites quickly, before you commit to a mast.', 'doppler_lidar' ); ?></p>
 				</article>
 			</div>
 		</div>
@@ -317,8 +317,8 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					<span class="wd-kicker__rule" aria-hidden="true"></span>
 					<span class="wd-label wd-kicker__text"><?php esc_html_e( 'Technology', 'doppler_lidar' ); ?></span>
 				</div>
-				<h2 id="tech-title" class="wd-headline-lg"><?php esc_html_e( 'Professional vertical profiling LiDAR', 'doppler_lidar' ); ?></h2>
-				<p class="wd-body"><?php esc_html_e( 'Our campaigns use industry-proven Doppler LiDAR technology capable of measuring the wind profile across modern turbine rotor heights.', 'doppler_lidar' ); ?></p>
+				<h2 id="tech-title" class="wd-headline-lg"><?php esc_html_e( 'Vertical profiling LiDAR technology', 'doppler_lidar' ); ?></h2>
+				<p class="wd-body"><?php esc_html_e( 'We work with LiDAR units from leading manufacturers, matched to your site and hub height, as a full turnkey campaign or as wind LiDAR rental. Vertical profiling Doppler LiDAR measures the wind profile across modern turbine rotor heights, which makes it a practical alternative or complement to a tall met mast, without the tower and with fewer civil works.', 'doppler_lidar' ); ?></p>
 				<a class="wd-text-link" href="#technology">
 					<?php esc_html_e( 'Explore the technology', 'doppler_lidar' ); ?>
 					<span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
@@ -349,8 +349,8 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					<span class="wd-kicker__rule wd-kicker__rule--primary" aria-hidden="true"></span>
 					<span class="wd-label wd-kicker__text wd-kicker__text--primary"><?php esc_html_e( 'Sample Campaign Report', 'doppler_lidar' ); ?></span>
 				</div>
-				<h2 id="sample-title" class="wd-headline-lg"><?php esc_html_e( 'And we show a real excerpt on the homepage.', 'doppler_lidar' ); ?></h2>
-				<p class="wd-body"><?php esc_html_e( 'Our reporting provides full transparency into campaign performance, ensuring every data point is verified and traceable to international standards.', 'doppler_lidar' ); ?></p>
+				<h2 id="sample-title" class="wd-headline-lg"><?php esc_html_e( 'Transparent campaign reporting', 'doppler_lidar' ); ?></h2>
+				<p class="wd-body"><?php esc_html_e( 'Every campaign comes with clear reporting: monthly statistics, equipment status and quality-control observations, so you can see how the campaign is performing and how each dataset was produced.', 'doppler_lidar' ); ?></p>
 				<ul class="wd-checklist wd-checklist--compact">
 					<li><span class="material-symbols-outlined" aria-hidden="true">analytics</span><span><?php esc_html_e( 'Monthly statistics', 'doppler_lidar' ); ?></span></li>
 					<li><span class="material-symbols-outlined" aria-hidden="true">settings_input_component</span><span><?php esc_html_e( 'Equipment status', 'doppler_lidar' ); ?></span></li>
@@ -362,7 +362,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				<div class="wd-report__top">
 					<div>
 						<p class="wd-report__brand"><?php esc_html_e( 'Favionus', 'doppler_lidar' ); ?></p>
-						<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Campaign Status Report', 'doppler_lidar' ); ?></p>
+						<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Campaign Status Report (example)', 'doppler_lidar' ); ?></p>
 					</div>
 					<div class="wd-report__metric">
 						<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Availability', 'doppler_lidar' ); ?></p>
@@ -415,15 +415,15 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					<div class="wd-report__stats">
 						<div>
 							<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Mean Wind Speed', 'doppler_lidar' ); ?></p>
-							<p class="wd-data">8.42 m/s</p>
+							<p class="wd-data">8.4 m/s</p>
 						</div>
 						<div>
 							<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Turbulence Intensity', 'doppler_lidar' ); ?></p>
-							<p class="wd-data">0.124</p>
+							<p class="wd-data">0.12</p>
 						</div>
 						<div>
-							<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'TI Class', 'doppler_lidar' ); ?></p>
-							<p class="wd-data"><?php esc_html_e( 'IEC Class A', 'doppler_lidar' ); ?></p>
+							<p class="wd-caption wd-caption--caps"><?php esc_html_e( 'Turbulence category (example)', 'doppler_lidar' ); ?></p>
+							<p class="wd-data"><?php esc_html_e( 'A', 'doppler_lidar' ); ?></p>
 						</div>
 					</div>
 				</div>
@@ -433,15 +433,15 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 
 	<section id="contact" class="wd-section wd-section--auto wd-section--border wd-contact" aria-labelledby="contact-title">
 		<div class="wd-container wd-contact__inner">
-			<h2 id="contact-title" class="wd-headline-lg"><?php esc_html_e( 'Plan a campaign or have questions?', 'doppler_lidar' ); ?></h2>
+			<h2 id="contact-title" class="wd-headline-lg"><?php esc_html_e( 'Plan your wind measurement campaign', 'doppler_lidar' ); ?></h2>
 			<p class="wd-body">
-				<?php esc_html_e( 'Let\'s plan the most suited campaign for your project.', 'doppler_lidar' ); ?>
+				<?php esc_html_e( 'Tell us about your site and timeline, and we\'ll plan the right LiDAR campaign for your project.', 'doppler_lidar' ); ?>
 			</p>
 
 			<?php if ( 'sent' === $status ) : ?>
-				<p class="wd-notice wd-notice--success" id="campaign-success" role="status" tabindex="-1"><?php esc_html_e( 'Message received. We will come back to discuss the most suited campaign for your project.', 'doppler_lidar' ); ?></p>
+				<p class="wd-notice wd-notice--success" id="campaign-success" role="status" tabindex="-1"><?php esc_html_e( 'Message received. We will be in touch to discuss the right campaign for your project.', 'doppler_lidar' ); ?></p>
 			<?php else : ?>
-				<p class="wd-notice wd-notice--success" id="campaign-success" role="status" tabindex="-1" hidden><?php esc_html_e( 'Message received. We will come back to discuss the most suited campaign for your project.', 'doppler_lidar' ); ?></p>
+				<p class="wd-notice wd-notice--success" id="campaign-success" role="status" tabindex="-1" hidden><?php esc_html_e( 'Message received. We will be in touch to discuss the right campaign for your project.', 'doppler_lidar' ); ?></p>
 			<?php endif; ?>
 			<?php if ( 'error' === $status ) : ?>
 				<p class="wd-notice wd-notice--error" id="campaign-error" role="alert"><?php esc_html_e( 'Please fill in your name and a valid work email, then try again.', 'doppler_lidar' ); ?></p>
@@ -453,7 +453,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 			<form id="campaign-form" class="wd-form" method="post" action="<?php echo esc_url( home_url( '/' ) ); ?>">
 				<?php wp_nonce_field( 'doppler_lidar_campaign', 'doppler_lidar_campaign_nonce' ); ?>
 				<p class="wd-hp" aria-hidden="true">
-					<label><?php esc_html_e( 'Fax', 'doppler_lidar' ); ?>
+					<label><?php /* Honeypot: intentionally no visible label text. */ ?>
 						<input type="text" name="wd_hp_fax" value="" tabindex="-1" autocomplete="off" inputmode="none">
 					</label>
 				</p>
@@ -502,7 +502,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 			<?php wp_nonce_field( 'doppler_lidar_fleet', 'doppler_lidar_fleet_nonce' ); ?>
 			<input type="hidden" name="action" value="doppler_lidar_fleet">
 			<p class="wd-hp" aria-hidden="true">
-				<label><?php esc_html_e( 'Fax', 'doppler_lidar' ); ?>
+				<label><?php /* Honeypot: intentionally no visible label text. */ ?>
 					<input type="text" name="wd_hp_fax" value="" tabindex="-1" autocomplete="off" inputmode="none">
 				</label>
 			</p>
@@ -555,7 +555,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 			<div class="wd-modal__step" data-fleet-step="loading" hidden>
 				<div class="wd-fleet-loading" role="status" aria-live="polite">
 					<span class="wd-fleet-loading__icon" aria-hidden="true"></span>
-					<p class="wd-label"><?php esc_html_e( 'Retrieving info from database', 'doppler_lidar' ); ?></p>
+					<p class="wd-label"><?php esc_html_e( 'Checking availability…', 'doppler_lidar' ); ?></p>
 				</div>
 			</div>
 
@@ -575,7 +575,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 						<span class="material-symbols-outlined" aria-hidden="true">info</span>
 						<p class="wd-fleet-status__label"><?php esc_html_e( 'Personalised solution', 'doppler_lidar' ); ?></p>
 					</div>
-					<p class="wd-body"><?php esc_html_e( 'A personalised solution can be found for requests above two units. Leave your details and we will come back with options.', 'doppler_lidar' ); ?></p>
+					<p class="wd-body"><?php esc_html_e( 'For more than two units, we will prepare a tailored offer. Leave your details and we will come back with options.', 'doppler_lidar' ); ?></p>
 				</div>
 
 				<p class="wd-caption" data-fleet-summary></p>

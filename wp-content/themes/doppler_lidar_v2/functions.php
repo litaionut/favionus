@@ -238,7 +238,7 @@ function doppler_lidar_scripts() {
 			array(
 				'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
 				'error'         => __( 'Please fill in your name, a valid work email and company, then try again.', 'doppler_lidar' ),
-				'campaignSent'  => __( 'Message received. We will come back to discuss the most suited campaign for your project.', 'doppler_lidar' ),
+				'campaignSent'  => __( 'Message received. We will be in touch to discuss the right campaign for your project.', 'doppler_lidar' ),
 				'campaignError' => __( 'Please fill in your name and a valid work email, then try again.', 'doppler_lidar' ),
 				'noCountry' => __( 'No matching country', 'doppler_lidar' ),
 				'durations' => array(
@@ -342,10 +342,10 @@ add_action( 'wp_enqueue_scripts', 'doppler_lidar_dequeue_unused_cf7', 100 );
  */
 function doppler_lidar_primary_menu_fallback() {
 	$items = array(
-		home_url( '/#technology' )    => __( 'LiDAR Systems', 'doppler_lidar' ),
-		home_url( '/#how-it-works' )  => __( 'Measurement', 'doppler_lidar' ),
-		home_url( '/#data-quality' )  => __( 'Analytics', 'doppler_lidar' ),
-		home_url( '/#use-cases' )     => __( 'Compliance', 'doppler_lidar' ),
+		home_url( '/#technology' )    => __( 'Technology', 'doppler_lidar' ),
+		home_url( '/#how-it-works' )  => __( 'How it works', 'doppler_lidar' ),
+		home_url( '/#data-quality' )  => __( 'Data Quality', 'doppler_lidar' ),
+		home_url( '/#use-cases' )     => __( 'Use Cases', 'doppler_lidar' ),
 		doppler_lidar_resources_url() => __( 'Research & Blog', 'doppler_lidar' ),
 		home_url( '/#contact' )       => __( 'Contact', 'doppler_lidar' ),
 	);
@@ -649,11 +649,11 @@ function doppler_lidar_bootstrap_resources() {
 		} else {
 			$inserted = wp_insert_post(
 				array(
-					'post_title'   => __( 'Technical Insights & Research Archive', 'doppler_lidar' ),
+					'post_title'   => __( 'Wind LiDAR & Wind Resource Assessment Resources', 'doppler_lidar' ),
 					'post_name'    => 'resources',
 					'post_status'  => 'publish',
 					'post_type'    => 'page',
-					'post_excerpt' => __( 'Empirical verification methodologies, sensor drift forensics, and operational campaign analyses. Calibrated for renewable lenders, met-ocean engineers, and bankable wind resource assessors.', 'doppler_lidar' ),
+					'post_excerpt' => __( 'Practical guides on wind LiDAR campaigns, measurement data quality and wind resource assessment, written for onshore wind developers, lenders and engineers.', 'doppler_lidar' ),
 				),
 				true
 			);

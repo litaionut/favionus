@@ -24,7 +24,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				<?php esc_html_e( 'Delivered turnkey.', 'doppler_lidar' ); ?>
 			</h1>
 			<p class="wd-body wd-lede--narrow">
-				<?php esc_html_e( 'Complete wind LiDAR measurement campaigns for onshore wind projects, from campaign design and deployment to 24/7 remote monitoring and quality-controlled data delivery. Based in Bucharest, working across Europe.', 'doppler_lidar' ); ?>
+				<?php esc_html_e( 'Complete wind LiDAR measurement campaigns for onshore wind projects, from campaign design and deployment to 24/7 remote monitoring and quality-controlled data delivery. Based in Bucharest, working in Romania and across Europe.', 'doppler_lidar' ); ?>
 			</p>
 			<div class="wd-hero__actions">
 				<a class="wd-btn wd-btn--primary wd-btn--lg" href="#contact"><?php esc_html_e( 'Plan a campaign', 'doppler_lidar' ); ?></a>
@@ -280,7 +280,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 
 	<section id="use-cases" class="wd-section wd-section--auto wd-section--border" aria-labelledby="usecases-title">
 		<div class="wd-container">
-			<h2 id="usecases-title" class="wd-headline-lg wd-section-title"><?php esc_html_e( 'Built for real onshore wind projects', 'doppler_lidar' ); ?></h2>
+			<h2 id="usecases-title" class="wd-headline-lg wd-section-title"><?php esc_html_e( 'Built for onshore wind projects in Romania and Europe', 'doppler_lidar' ); ?></h2>
 			<div class="wd-cases">
 				<article class="wd-case">
 					<span class="wd-case__num" aria-hidden="true">01</span>

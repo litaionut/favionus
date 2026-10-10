@@ -781,3 +781,8 @@ if ( defined( 'JETPACK__VERSION' ) ) {
 	require get_template_directory() . '/inc/jetpack.php';
 }
 
+
+/**
+ * Indexing fixes (noindex thin archives, stale staging-domain canonicals).
+ */
+require get_template_directory() . '/inc/seo-indexing.php';

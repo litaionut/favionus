@@ -1,6 +1,6 @@
-# Turnkey Wind LiDAR Measurement Campaigns
+# Wind Measurement Campaigns with LiDAR, Turnkey
 
-Favionus delivers **turnkey onshore wind LiDAR measurement campaigns**: campaign design, deployment, autonomous power, 24/7 remote monitoring and quality-controlled datasets ready for engineering and financing workflows. Based in Bucharest, campaigns across Europe.
+Favionus delivers **turnkey onshore wind LiDAR measurement campaigns**: campaign design, deployment, autonomous power, 24/7 remote monitoring and quality-controlled datasets ready for engineering and financing workflows. Based in Bucharest, with campaigns in Romania and across Europe.
 
 ## What a turnkey LiDAR campaign includes
 

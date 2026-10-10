@@ -2806,6 +2806,11 @@ body.wd-resources .site-main {
 	}
 }
 
+/* Full-width page template (service + legal pages) */
+.wd-page-full { padding-block: 4rem; }
+.wd-page-full .entry-content { max-width: 760px; }
+.wd-page-full .entry-content h2 { margin-top: 2.25rem; }
+
 /* Language switcher */
 .wd-lang { display: inline-flex; gap: .35rem; align-items: center; margin-right: 1rem; font-size: .8125rem; letter-spacing: .04em; }
 .wd-lang a { text-decoration: none; opacity: .7; }

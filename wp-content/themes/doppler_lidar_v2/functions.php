@@ -781,3 +781,17 @@ if ( defined( 'JETPACK__VERSION' ) ) {
 	require get_template_directory() . '/inc/jetpack.php';
 }
 
+/**
+ * Indexing fixes (noindex thin archives, stale staging-domain canonicals).
+ */
+require get_template_directory() . '/inc/seo-indexing.php';
+
+/**
+ * Romanian (/ro/) strings, lang attribute, hreflang and language switcher.
+ */
+require get_template_directory() . '/inc/seo-ro.php';
+
+/**
+ * Default SEO titles/descriptions, Organization/LocalBusiness/Service schema, og:image fallback.
+ */
+require get_template_directory() . '/inc/seo-meta.php';

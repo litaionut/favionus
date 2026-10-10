@@ -28,3 +28,15 @@ Kept out of the .md files because mu-plugins/favionus-seo.php converts those fil
 ## content/pages/terms-of-use.md
 - Slug: /terms-of-use/   Template: Full width (no sidebar).
 - SEO title: Terms of Use – Favionus. Meta description: Terms for using favionus.com: information only, offers by written proposal, Romanian law.
+
+## Romanian pages (PR 3). Create in wp-admin when publishing resumes. TODO: native Romanian review.
+### /ro/ (RO homepage)
+- Create page "Acasă" with slug `ro`, template **Homepage (Romanian)**. Leave the content empty: the template renders the translated homepage.
+- SEO title: Campanii de măsurare a vântului cu LiDAR – Favionus (51)
+- Meta description: Campanii LiDAR la cheie pentru măsurarea vântului în proiecte eoliene onshore din România: instalare, monitorizare 24/7 și date verificate. (139)
+### content/ro/pages/campanii-masurare-vant-lidar.md
+- Create page with slug `campanii-masurare-vant-lidar`, **parent = the "ro" page** (URL /ro/campanii-masurare-vant-lidar/), template Full width (from PR 2; Default works too).
+- SEO title: Campanie de măsurare a vântului cu LiDAR – Favionus (51)
+- Meta description: Campanii de măsurare a vântului și închiriere LiDAR pentru parcuri eoliene din România: LiDAR cu profil vertical, alimentare autonomă, date verificate. (149; the plan's "IEC 61400-50-2" wording was replaced because it is still [confirm])
+- Left out pending [confirm]: "Calitatea datelor și IEC 61400-50-2" (verification procedure), "Ce livrăm" (formats), FAQ (duration, permits in Romania).
+- hreflang: emitted automatically by inc/seo-ro.php once both /wind-lidar-measurement-campaigns/ and this page are published.

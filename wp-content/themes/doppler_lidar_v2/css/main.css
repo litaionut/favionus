@@ -2810,3 +2810,9 @@ body.wd-resources .site-main {
 .wd-page-full { padding-block: 4rem; }
 .wd-page-full .entry-content { max-width: 760px; }
 .wd-page-full .entry-content h2 { margin-top: 2.25rem; }
+
+/* Language switcher */
+.wd-lang { display: inline-flex; gap: .35rem; align-items: center; margin-right: 1rem; font-size: .8125rem; letter-spacing: .04em; }
+.wd-lang a { text-decoration: none; opacity: .7; }
+.wd-lang a[aria-current="true"] { opacity: 1; font-weight: 600; }
+.wd-lang ul, ul.wd-lang { list-style: none; margin: 0; padding: 0; display: inline-flex; gap: .5rem; }

@@ -51,7 +51,8 @@
 			</nav>
 
 			<div class="site-header__actions">
-				<a class="wd-btn wd-btn--primary" href="<?php echo esc_url( home_url( '/#contact' ) ); ?>">
+				<?php doppler_lidar_language_switcher(); ?>
+				<a class="wd-btn wd-btn--primary" href="<?php echo esc_url( doppler_lidar_lang_home( '#contact' ) ); ?>">
 					<?php esc_html_e( 'Plan a campaign', 'doppler_lidar' ); ?>
 				</a>
 			</div>

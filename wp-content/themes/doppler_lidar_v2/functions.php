@@ -790,3 +790,8 @@ require get_template_directory() . '/inc/seo-indexing.php';
  * Romanian (/ro/) strings, lang attribute, hreflang and language switcher.
  */
 require get_template_directory() . '/inc/seo-ro.php';
+
+/**
+ * Default SEO titles/descriptions, Organization/LocalBusiness/Service schema, og:image fallback.
+ */
+require get_template_directory() . '/inc/seo-meta.php';

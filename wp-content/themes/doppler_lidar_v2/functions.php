@@ -237,7 +237,7 @@ function doppler_lidar_scripts() {
 			'dopplerLidarFleet',
 			array(
 				'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
-				'error'         => __( 'Please fill in your name, a valid work email and company, then try again.', 'doppler_lidar' ),
+				'error'         => __( 'Please fill in all fields with a valid work email, then try again.', 'doppler_lidar' ),
 				'campaignSent'  => __( 'Message received. We will be in touch to discuss the right campaign for your project.', 'doppler_lidar' ),
 				'campaignError' => __( 'Please fill in your name and a valid work email, then try again.', 'doppler_lidar' ),
 				'noCountry' => __( 'No matching country', 'doppler_lidar' ),
@@ -534,19 +534,16 @@ function doppler_lidar_handle_fleet_request() {
 	$country  = isset( $_POST['fleet_country'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_country'] ) ) : '';
 	$duration = isset( $_POST['fleet_duration'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_duration'] ) ) : '';
 	$units    = isset( $_POST['fleet_units'] ) ? absint( $_POST['fleet_units'] ) : 0;
+	$location = isset( $_POST['fleet_location'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_location'] ) ) : '';
+	$start    = isset( $_POST['fleet_start'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_start'] ) ) : '';
 
 	$allowed_durations = array( 'lt1', '2-3', 'gt3' );
 	$countries         = doppler_lidar_fleet_countries();
-	if ( '' === $name || ! is_email( $email ) || '' === $company || $units < 1 || ! isset( $countries[ $country ] ) || ! in_array( $duration, $allowed_durations, true ) ) {
+	if ( '' === $name || ! is_email( $email ) || '' === $company || '' === $location || '' === $start || $units < 1 || ! isset( $countries[ $country ] ) || ! in_array( $duration, $allowed_durations, true ) ) {
 		wp_send_json_error(
-			array( 'message' => __( 'Please fill in your name, a valid work email and company, then try again.', 'doppler_lidar' ) ),
+			array( 'message' => __( 'Please fill in all fields with a valid work email, then try again.', 'doppler_lidar' ) ),
 			400
 		);
-	}
-
-	$outcome = isset( $_POST['fleet_outcome'] ) ? sanitize_key( wp_unslash( $_POST['fleet_outcome'] ) ) : '';
-	if ( ! in_array( $outcome, array( 'available', 'custom' ), true ) ) {
-		$outcome = $units <= 2 ? 'available' : 'custom';
 	}
 
 	$lines = array(
@@ -554,14 +551,16 @@ function doppler_lidar_handle_fleet_request() {
 		'Email: ' . $email,
 		'Company: ' . $company,
 		'Country: ' . $countries[ $country ],
-		'Estimated data need: ' . doppler_lidar_fleet_duration_label( $duration ),
+		'Measurement period: ' . doppler_lidar_fleet_duration_label( $duration ),
 		'Number of units: ' . $units,
-		'Availability: ' . ( 'available' === $outcome ? 'Available for checked conditions' : 'Personalised solution' ),
+		'Project location: ' . $location,
+		'Preferred start: ' . $start,
+		'Note: availability not yet confirmed. Reply by email within 1 business day.',
 	);
 
 	$sent = wp_mail(
 		get_option( 'admin_email' ),
-		sprintf( '[Favionus] Fleet enquiry from %s', $name ),
+		sprintf( '[Favionus] LiDAR availability request from %s', $name ),
 		implode( "\n", $lines ),
 		array( 'Content-Type: text/plain; charset=UTF-8', 'Reply-To: ' . $email )
 	);

@@ -85,9 +85,7 @@
 	}
 
 	var cfg = window.dopplerLidarFleet || {};
-	var threshold = 2;
 	var lastOpener = null;
-	var currentStep = 'ask';
 	var loadTimer = null;
 
 	var durationLabels = cfg.durations || {
@@ -334,88 +332,20 @@
 
 	form.querySelectorAll('[data-wd-select] select').forEach(enhanceSelect);
 
-	function steps() {
-		return form.querySelectorAll('[data-fleet-step]');
-	}
-
-	function showStep(name) {
-		currentStep = name;
-		steps().forEach(function (step) {
-			var on = step.getAttribute('data-fleet-step') === name;
-			step.hidden = !on;
-			step.classList.toggle('is-active', on);
-		});
-
-		var nameInput = form.querySelector('#fleet_name');
-		var emailInput = form.querySelector('#fleet_email');
-		var companyInput = form.querySelector('#fleet_company');
-		var required = name === 'result';
-		if (nameInput) {
-			nameInput.required = required;
-		}
-		if (emailInput) {
-			emailInput.required = required;
-		}
-		if (companyInput) {
-			companyInput.required = required;
-		}
-
-		var askFields = form.querySelectorAll('#fleet_country, #fleet_units, input[name="fleet_duration"]');
-		askFields.forEach(function (field) {
-			field.required = name === 'ask';
-		});
-
-		if (name === 'result' && nameInput) {
-			nameInput.focus();
-		}
-	}
-
-	function selectedDuration() {
-		var checked = form.querySelector('input[name="fleet_duration"]:checked');
-		return checked ? checked.value : '';
-	}
-
-	function countryLabel() {
-		var select = form.querySelector('#fleet_country');
-		if (!select || !select.selectedOptions.length) {
-			return '';
-		}
-		return select.selectedOptions[0].textContent.trim();
-	}
-
-	function fillSummaries() {
-		var units = form.querySelector('#fleet_units').value;
-		var duration = durationLabels[selectedDuration()] || selectedDuration();
-		var text = [countryLabel(), duration, units ? units + ' units' : '']
-			.filter(Boolean)
-			.join(' · ');
-		form.querySelectorAll('[data-fleet-summary]').forEach(function (el) {
-			el.textContent = text;
-		});
-	}
-
-	function setOutcome(outcome) {
-		var input = form.querySelector('#fleet_outcome');
-		if (input) {
-			input.value = outcome;
-		}
-		form.querySelectorAll('[data-fleet-result]').forEach(function (el) {
-			el.hidden = el.getAttribute('data-fleet-result') !== outcome;
-		});
-	}
+	/*
+	 * Honest "Request availability" form: one step, no simulated check.
+	 * The request is emailed to Favionus, who confirm availability by email.
+	 */
+	var body = form.querySelector('[data-fleet-step="form"]');
+	var sent = form.querySelector('[data-fleet-step="sent"]');
 
 	function setError(message) {
 		var box = form.querySelector('[data-fleet-error]');
 		if (!box) {
 			return;
 		}
-		if (!message) {
-			box.hidden = true;
-			box.textContent = '';
-			return;
-		}
-		box.hidden = false;
-		box.textContent = message;
+		box.hidden = !message;
+		box.textContent = message || '';
 	}
 
 	function closeSelects() {
@@ -426,19 +356,26 @@
 		});
 	}
 
-	function clearLoadTimer() {
-		if (loadTimer) {
-			window.clearTimeout(loadTimer);
-			loadTimer = null;
-		}
+	function showStep(step) {
+		[body, sent].forEach(function (el) {
+			if (!el) {
+				return;
+			}
+			var on = el === step;
+			el.hidden = !on;
+			el.classList.toggle('is-active', on);
+		});
+	}
+
+	function showForm() {
+		showStep(body);
 	}
 
 	function openModal(opener) {
 		lastOpener = opener || null;
-		clearLoadTimer();
 		setError('');
-		showStep('ask');
 		closeSelects();
+		showForm();
 		modal.showModal();
 	}
 
@@ -455,9 +392,7 @@
 	});
 
 	modal.querySelectorAll('[data-wd-modal-close]').forEach(function (el) {
-		el.addEventListener('click', function () {
-			closeModal();
-		});
+		el.addEventListener('click', closeModal);
 	});
 
 	modal.addEventListener('click', function (event) {
@@ -467,52 +402,15 @@
 	});
 
 	modal.addEventListener('close', function () {
-		clearLoadTimer();
 		closeSelects();
 		if (lastOpener && typeof lastOpener.focus === 'function') {
 			lastOpener.focus();
 		}
 	});
 
-	form.querySelectorAll('[data-fleet-back]').forEach(function (btn) {
-		btn.addEventListener('click', function () {
-			clearLoadTimer();
-			setError('');
-			showStep('ask');
-			form.querySelector('#fleet_units').focus();
-		});
-	});
-
 	form.addEventListener('submit', function (event) {
 		event.preventDefault();
-
-		if (currentStep === 'ask') {
-			closeSelects();
-			if (!form.reportValidity()) {
-				return;
-			}
-			var units = parseInt(form.querySelector('#fleet_units').value, 10);
-			if (!units || units < 1) {
-				return;
-			}
-			fillSummaries();
-			setOutcome(units <= threshold ? 'available' : 'custom');
-			showStep('loading');
-			clearLoadTimer();
-			loadTimer = window.setTimeout(function () {
-				loadTimer = null;
-				if (!modal.open) {
-					return;
-				}
-				showStep('result');
-			}, 2000);
-			return;
-		}
-
-		if (currentStep !== 'result') {
-			return;
-		}
-
+		closeSelects();
 		if (!form.reportValidity()) {
 			return;
 		}
@@ -523,27 +421,25 @@
 		}
 		setError('');
 
-		var data = new FormData(form);
 		fetch(cfg.ajaxUrl || form.getAttribute('action'), {
 			method: 'POST',
-			body: data,
+			body: new FormData(form),
 			credentials: 'same-origin'
 		})
 			.then(function (response) {
-				return response.json().then(function (payload) {
-					return { ok: response.ok, payload: payload };
-				});
+				return response.json();
 			})
-			.then(function (result) {
-				if (result.payload && result.payload.success) {
-					showStep('sent');
+			.then(function (payload) {
+				if (payload && payload.success) {
+					form.reset();
+					showStep(sent);
 					return;
 				}
-				var msg =
-					(result.payload && result.payload.data && result.payload.data.message) ||
-					cfg.error ||
-					'Please check your details and try again.';
-				setError(msg);
+				setError(
+					(payload && payload.data && payload.data.message) ||
+						cfg.error ||
+						'Please check your details and try again.'
+				);
 			})
 			.catch(function () {
 				setError(cfg.error || 'Please check your details and try again.');

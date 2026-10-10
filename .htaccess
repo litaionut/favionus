@@ -1,3 +1,21 @@
+# BEGIN Favionus security cleanup (2026-10-10)
+# 1) Staging host -> live site. Host-based, so it cannot loop behind Cloudflare
+#    (the target host favionus.com never matches these conditions).
+# 2) X-Robots-Tag noindex for the staging host as a fallback.
+# 3) Deny public access to InstaWP migration backups.
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteCond %{HTTP_HOST} ^(www\.)?npx\.mxs\.mybluehost\.me$ [NC]
+RewriteRule ^(.*)$ https://favionus.com/$1 [R=301,L]
+RewriteRule ^wp-content/instawpbackups(/|$) - [F,L]
+</IfModule>
+<IfModule mod_headers.c>
+<If "%{HTTP_HOST} =~ /^(www\.)?npx\.mxs\.mybluehost\.me$/i">
+Header always set X-Robots-Tag "noindex, nofollow"
+</If>
+</IfModule>
+# END Favionus security cleanup
+
 # BEGIN Favionus HTTPS redirect
 # Redirect http -> https at the origin. Safe behind Cloudflare in both "Flexible"
 # and "Full" SSL modes (checks X-Forwarded-Proto so it cannot loop).

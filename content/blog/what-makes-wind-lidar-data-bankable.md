@@ -12,7 +12,7 @@ Banks and advisors do not fund projects on raw sensor output alone. **Bankable w
 
 ## How Favionus approaches this
 
-We run turnkey campaigns: plan, deploy, monitor 24/7, and deliver quality-controlled datasets with reporting ready for your engineering workflow — not just a rented box on site.
+We run turnkey campaigns: plan, deploy, monitor 24/7, and deliver quality-controlled datasets with reporting ready for your engineering workflow. If you prefer to run the campaign in-house, we also offer wind LiDAR rental.
 
 ## Next step
 

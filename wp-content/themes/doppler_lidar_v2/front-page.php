@@ -508,16 +508,12 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 			</p>
 
 			<div class="wd-modal__step is-active" data-fleet-step="ask">
-				<p class="wd-body" data-fleet-intro="check"><?php esc_html_e( 'Choose your measurement dates and the number of LiDAR units. We check our fleet calendar for units free for the whole period.', 'doppler_lidar' ); ?></p>
+				<p class="wd-body" data-fleet-intro="check"><?php esc_html_e( 'Choose your preferred start date and the number of LiDAR units. We check our fleet calendar for units free on that date.', 'doppler_lidar' ); ?></p>
 				<p class="wd-body" data-fleet-intro="request" hidden><?php esc_html_e( 'Tell us about your project and how many LiDAR units you need. We\'ll confirm availability by email within 1 business day.', 'doppler_lidar' ); ?></p>
 
 				<div class="wd-field">
-					<label class="wd-label" for="fleet_start"><?php esc_html_e( 'Start date', 'doppler_lidar' ); ?></label>
+					<label class="wd-label" for="fleet_start"><?php esc_html_e( 'Preferred start date', 'doppler_lidar' ); ?></label>
 					<input id="fleet_start" name="fleet_start" type="date" required>
-				</div>
-				<div class="wd-field">
-					<label class="wd-label" for="fleet_end"><?php esc_html_e( 'End date', 'doppler_lidar' ); ?></label>
-					<input id="fleet_end" name="fleet_end" type="date" required>
 				</div>
 				<div class="wd-field">
 					<label class="wd-label" for="fleet_units"><?php esc_html_e( 'Number of units', 'doppler_lidar' ); ?></label>

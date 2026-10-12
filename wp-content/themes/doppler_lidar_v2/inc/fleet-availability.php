@@ -112,6 +112,10 @@ function doppler_lidar_fleet_free_units( $start, $end ) {
 function doppler_lidar_fleet_period( $start, $end ) {
 	$start = sanitize_text_field( (string) $start );
 	$end   = sanitize_text_field( (string) $end );
+	if ( '' === $end ) {
+		// No end date given (website form since 2026-10-12): check the start date only.
+		$end = $start;
+	}
 	if ( ! doppler_lidar_fleet_valid_date( $start ) || ! doppler_lidar_fleet_valid_date( $end ) || $end < $start ) {
 		return new WP_Error( 'favionus_bad_dates', __( 'Please choose a valid start and end date.', 'doppler_lidar' ), array( 'status' => 400 ) );
 	}
@@ -149,7 +153,7 @@ add_action(
 				'permission_callback' => '__return_true',
 				'args'                => array(
 					'start' => array( 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
-					'end'   => array( 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
+					'end'   => array( 'required' => false, 'default' => '', 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
 					'units' => array( 'required' => true, 'type' => 'integer', 'minimum' => 1, 'maximum' => 99, 'sanitize_callback' => 'absint' ),
 					'nonce' => array( 'required' => true, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field' ),
 				),

@@ -13,6 +13,18 @@ if ( ! defined( '_S_VERSION' ) ) {
 }
 
 /**
+ * True on pages rendered with the homepage layout: the EN front page and the
+ * Romanian homepage (/ro/, template page-templates/home-ro.php, which includes
+ * front-page.php). Use this instead of is_front_page() for homepage assets such
+ * as the LiDAR availability modal script.
+ *
+ * @return bool
+ */
+function doppler_lidar_is_home_layout() {
+	return is_front_page() || is_page_template( 'page-templates/home-ro.php' );
+}
+
+/**
  * Sets up theme defaults and registers support for various WordPress features.
  *
  * Note that this function is hooked into the after_setup_theme hook, which
@@ -224,7 +236,7 @@ function doppler_lidar_scripts() {
 
 	wp_enqueue_script( 'doppler_lidar-navigation', get_template_directory_uri() . '/js/navigation.js', array(), _S_VERSION, true );
 
-	if ( is_front_page() ) {
+	if ( doppler_lidar_is_home_layout() ) {
 		wp_enqueue_script(
 			'doppler_lidar-fleet',
 			get_template_directory_uri() . '/js/fleet-modal.js',
@@ -269,7 +281,7 @@ function doppler_lidar_scripts() {
 		);
 	}
 
-	if ( is_front_page() && 'vane' === $skin ) {
+	if ( doppler_lidar_is_home_layout() && 'vane' === $skin ) {
 		wp_enqueue_script(
 			'doppler_lidar-scan',
 			get_template_directory_uri() . '/js/lidar-scan.js',
@@ -326,7 +338,7 @@ add_filter( 'wp_resource_hints', 'doppler_lidar_resource_hints', 10, 2 );
  * Preload theme CSS + felt texture on the front page (LCP path).
  */
 function doppler_lidar_preload_lcp_assets() {
-	if ( ! is_front_page() ) {
+	if ( ! doppler_lidar_is_home_layout() ) {
 		return;
 	}
 	$main = get_template_directory_uri() . '/css/main.css?ver=' . rawurlencode( _S_VERSION );

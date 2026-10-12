@@ -229,7 +229,8 @@ function doppler_lidar_scripts() {
 			'doppler_lidar-fleet',
 			get_template_directory_uri() . '/js/fleet-modal.js',
 			array(),
-			_S_VERSION,
+			// Cache-bust on every upload (a stale cached fleet-modal.js broke the modal on 2026-10-11).
+			(string) filemtime( get_template_directory() . '/js/fleet-modal.js' ),
 			true
 		);
 		wp_localize_script(
@@ -237,6 +238,24 @@ function doppler_lidar_scripts() {
 			'dopplerLidarFleet',
 			array(
 				'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
+				'restUrl'    => esc_url_raw( rest_url( 'favionus/v1/availability' ) ),
+				'nonce'      => wp_create_nonce( 'favionus_availability' ),
+				'configured' => function_exists( 'doppler_lidar_fleet_active_count' ) && doppler_lidar_fleet_active_count() > 0,
+				'badDates'   => __( 'The end date must be after the start date.', 'doppler_lidar' ),
+				'i18n'       => array(
+					'availableTitle'   => __( 'Units available', 'doppler_lidar' ),
+					/* translators: %d: number of free units */
+					'availableText'    => __( '%d units available for these dates. Leave your details and we will confirm the booking by email.', 'doppler_lidar' ),
+					'availableOne'     => __( '1 unit available for these dates. Leave your details and we will confirm the booking by email.', 'doppler_lidar' ),
+					'partialTitle'     => __( 'Partly available', 'doppler_lidar' ),
+					/* translators: 1: free units, 2: requested units */
+					'partialText'      => __( 'Only %1$d of the %2$d units you asked for are free for these dates. Send a request and we\'ll propose alternatives.', 'doppler_lidar' ),
+					'noneTitle'        => __( 'No units free', 'doppler_lidar' ),
+					'noneText'         => __( 'No units free for these dates. Send a request and we\'ll propose alternatives.', 'doppler_lidar' ),
+					'checkFailed'      => __( 'We could not check the calendar right now. Send a request and we\'ll confirm availability by email within 1 business day.', 'doppler_lidar' ),
+					'requestTitle'     => __( 'Request availability', 'doppler_lidar' ),
+					'units'            => __( 'units', 'doppler_lidar' ),
+				),
 				'error'         => __( 'Please fill in all fields with a valid work email, then try again.', 'doppler_lidar' ),
 				'campaignSent'  => __( 'Message received. We will be in touch to discuss the right campaign for your project.', 'doppler_lidar' ),
 				'campaignError' => __( 'Please fill in your name and a valid work email, then try again.', 'doppler_lidar' ),
@@ -532,18 +551,26 @@ function doppler_lidar_handle_fleet_request() {
 	$email    = isset( $_POST['fleet_email'] ) ? sanitize_email( wp_unslash( $_POST['fleet_email'] ) ) : '';
 	$company  = isset( $_POST['fleet_company'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_company'] ) ) : '';
 	$country  = isset( $_POST['fleet_country'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_country'] ) ) : '';
-	$duration = isset( $_POST['fleet_duration'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_duration'] ) ) : '';
-	$units    = isset( $_POST['fleet_units'] ) ? absint( $_POST['fleet_units'] ) : 0;
 	$location = isset( $_POST['fleet_location'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_location'] ) ) : '';
+	$units    = isset( $_POST['fleet_units'] ) ? absint( $_POST['fleet_units'] ) : 0;
 	$start    = isset( $_POST['fleet_start'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_start'] ) ) : '';
+	$end      = isset( $_POST['fleet_end'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_end'] ) ) : '';
 
-	$allowed_durations = array( 'lt1', '2-3', 'gt3' );
-	$countries         = doppler_lidar_fleet_countries();
-	if ( '' === $name || ! is_email( $email ) || '' === $company || '' === $location || '' === $start || $units < 1 || ! isset( $countries[ $country ] ) || ! in_array( $duration, $allowed_durations, true ) ) {
+	$countries = doppler_lidar_fleet_countries();
+	$period    = function_exists( 'doppler_lidar_fleet_period' ) ? doppler_lidar_fleet_period( $start, $end ) : new WP_Error( 'x', 'x' );
+	if ( '' === $name || ! is_email( $email ) || '' === $company || $units < 1 || $units > 99 || ! isset( $countries[ $country ] ) || is_wp_error( $period ) ) {
 		wp_send_json_error(
 			array( 'message' => __( 'Please fill in all fields with a valid work email, then try again.', 'doppler_lidar' ) ),
 			400
 		);
+	}
+
+	// Re-run the availability check on the server (never trust the browser's result).
+	if ( function_exists( 'doppler_lidar_fleet_active_count' ) && doppler_lidar_fleet_active_count() > 0 ) {
+		$free  = doppler_lidar_fleet_free_units( $period[0], $period[1] );
+		$check = sprintf( '%d of %d requested units free in the fleet calendar (checked %s)', $free, $units, current_time( 'Y-m-d H:i' ) );
+	} else {
+		$check = 'Not checked (no units configured in Tools > LiDAR fleet)';
 	}
 
 	$lines = array(
@@ -551,11 +578,11 @@ function doppler_lidar_handle_fleet_request() {
 		'Email: ' . $email,
 		'Company: ' . $company,
 		'Country: ' . $countries[ $country ],
-		'Measurement period: ' . doppler_lidar_fleet_duration_label( $duration ),
+		'Project location: ' . ( '' !== $location ? $location : '-' ),
+		'Period: ' . $period[0] . ' to ' . $period[1],
 		'Number of units: ' . $units,
-		'Project location: ' . $location,
-		'Preferred start: ' . $start,
-		'Note: availability not yet confirmed. Reply by email within 1 business day.',
+		'Availability check: ' . $check,
+		'Note: nothing is booked yet. Reply by email within 1 business day.',
 	);
 
 	$sent = wp_mail(
@@ -794,3 +821,8 @@ require get_template_directory() . '/inc/seo-ro.php';
  * Default SEO titles/descriptions, Organization/LocalBusiness/Service schema, og:image fallback.
  */
 require get_template_directory() . '/inc/seo-meta.php';
+
+/**
+ * Real LiDAR fleet availability (DB tables, Tools › LiDAR fleet, REST endpoint).
+ */
+require get_template_directory() . '/inc/fleet-availability.php';

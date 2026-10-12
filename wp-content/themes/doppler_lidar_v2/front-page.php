@@ -507,22 +507,60 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				</label>
 			</p>
 
-			<div class="wd-modal__step is-active" data-fleet-step="form">
-				<p class="wd-body"><?php esc_html_e( 'Tell us about your project and how many LiDAR units you need. We\'ll confirm availability by email within 1 business day.', 'doppler_lidar' ); ?></p>
+			<div class="wd-modal__step is-active" data-fleet-step="ask">
+				<p class="wd-body" data-fleet-intro="check"><?php esc_html_e( 'Choose your measurement dates and the number of LiDAR units. We check our fleet calendar for units free for the whole period.', 'doppler_lidar' ); ?></p>
+				<p class="wd-body" data-fleet-intro="request" hidden><?php esc_html_e( 'Tell us about your project and how many LiDAR units you need. We\'ll confirm availability by email within 1 business day.', 'doppler_lidar' ); ?></p>
+
+				<div class="wd-field">
+					<label class="wd-label" for="fleet_start"><?php esc_html_e( 'Start date', 'doppler_lidar' ); ?></label>
+					<input id="fleet_start" name="fleet_start" type="date" required>
+				</div>
+				<div class="wd-field">
+					<label class="wd-label" for="fleet_end"><?php esc_html_e( 'End date', 'doppler_lidar' ); ?></label>
+					<input id="fleet_end" name="fleet_end" type="date" required>
+				</div>
+				<div class="wd-field">
+					<label class="wd-label" for="fleet_units"><?php esc_html_e( 'Number of units', 'doppler_lidar' ); ?></label>
+					<input id="fleet_units" name="fleet_units" type="number" min="1" max="99" step="1" inputmode="numeric" required>
+				</div>
+
+				<p class="wd-modal__error" data-fleet-check-error hidden role="alert"></p>
+				<div class="wd-form__submit" data-fleet-check-wrap>
+					<button class="wd-btn wd-btn--primary wd-btn--lg" type="submit" data-fleet-check>
+						<?php esc_html_e( 'Check availability', 'doppler_lidar' ); ?>
+					</button>
+				</div>
+			</div>
+
+			<div class="wd-modal__step" data-fleet-step="loading" hidden>
+				<div class="wd-fleet-loading" role="status" aria-live="polite">
+					<span class="wd-fleet-loading__icon" aria-hidden="true"></span>
+					<p class="wd-label"><?php esc_html_e( 'Checking the fleet calendar…', 'doppler_lidar' ); ?></p>
+				</div>
+			</div>
+
+			<div class="wd-modal__step" data-fleet-step="details" hidden>
+				<div class="wd-fleet-message" data-fleet-result hidden role="status">
+					<div class="wd-fleet-status" data-fleet-result-box>
+						<span class="wd-fleet-status__dot" aria-hidden="true"></span>
+						<p class="wd-fleet-status__label" data-fleet-result-title></p>
+					</div>
+					<p class="wd-body" data-fleet-result-text></p>
+				</div>
+				<p class="wd-caption" data-fleet-summary></p>
 
 				<div class="wd-field">
 					<label class="wd-label" for="fleet_name"><?php esc_html_e( 'Name', 'doppler_lidar' ); ?></label>
-					<input id="fleet_name" name="fleet_name" type="text" autocomplete="name" required>
+					<input id="fleet_name" name="fleet_name" type="text" autocomplete="name">
 				</div>
 				<div class="wd-field">
 					<label class="wd-label" for="fleet_email"><?php esc_html_e( 'Work email', 'doppler_lidar' ); ?></label>
-					<input id="fleet_email" name="fleet_email" type="email" autocomplete="email" required>
+					<input id="fleet_email" name="fleet_email" type="email" autocomplete="email">
 				</div>
 				<div class="wd-field">
 					<label class="wd-label" for="fleet_company"><?php esc_html_e( 'Company', 'doppler_lidar' ); ?></label>
-					<input id="fleet_company" name="fleet_company" type="text" autocomplete="organization" required>
+					<input id="fleet_company" name="fleet_company" type="text" autocomplete="organization">
 				</div>
-
 				<div class="wd-field">
 					<label class="wd-label" for="fleet_country-toggle"><?php esc_html_e( 'Country', 'doppler_lidar' ); ?></label>
 					<div class="wd-select" data-wd-select>
@@ -537,43 +575,14 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 
 				<div class="wd-field">
 					<label class="wd-label" for="fleet_location"><?php esc_html_e( 'Project location (region or nearest town)', 'doppler_lidar' ); ?></label>
-					<input id="fleet_location" name="fleet_location" type="text" maxlength="200" required>
+					<input id="fleet_location" name="fleet_location" type="text" maxlength="200">
 				</div>
-
-				<div class="wd-field">
-					<label class="wd-label" for="fleet_units"><?php esc_html_e( 'Number of units', 'doppler_lidar' ); ?></label>
-					<input id="fleet_units" name="fleet_units" type="number" min="1" max="99" step="1" inputmode="numeric" required>
-				</div>
-
-				<div class="wd-field">
-					<label class="wd-label" for="fleet_start"><?php esc_html_e( 'Preferred start date', 'doppler_lidar' ); ?></label>
-					<input id="fleet_start" name="fleet_start" type="date" required>
-				</div>
-
-				<fieldset class="wd-field">
-					<legend class="wd-label"><?php esc_html_e( 'Measurement period', 'doppler_lidar' ); ?></legend>
-					<div class="wd-modal__choices">
-						<label class="wd-choice">
-							<input type="radio" name="fleet_duration" value="lt1" required>
-							<span><?php esc_html_e( '< 1 month', 'doppler_lidar' ); ?></span>
-						</label>
-						<label class="wd-choice">
-							<input type="radio" name="fleet_duration" value="2-3">
-							<span><?php esc_html_e( '2–3 months', 'doppler_lidar' ); ?></span>
-						</label>
-						<label class="wd-choice">
-							<input type="radio" name="fleet_duration" value="gt3">
-							<span><?php esc_html_e( '> 3 months', 'doppler_lidar' ); ?></span>
-						</label>
-					</div>
-				</fieldset>
 
 				<p class="wd-caption"><?php esc_html_e( 'This is a request, not a booking. We will reply by email with availability and options.', 'doppler_lidar' ); ?></p>
 				<p class="wd-modal__error" data-fleet-error hidden role="alert"></p>
-				<div class="wd-form__submit">
-					<button class="wd-btn wd-btn--primary wd-btn--lg" type="submit" data-fleet-send>
-						<?php esc_html_e( 'Request availability', 'doppler_lidar' ); ?>
-					</button>
+				<div class="wd-modal__actions">
+					<button class="wd-btn wd-btn--ghost" type="button" data-fleet-back><?php esc_html_e( 'Back', 'doppler_lidar' ); ?></button>
+					<button class="wd-btn wd-btn--primary" type="submit" data-fleet-send><?php esc_html_e( 'Send request', 'doppler_lidar' ); ?></button>
 				</div>
 			</div>
 

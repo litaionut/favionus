@@ -2806,6 +2806,26 @@ body.wd-resources .site-main {
 	}
 }
 
+/* Synced from live theme (2026-10-12): article CTA */
+.wd-post .entry-title {
+	margin-bottom: 1.75rem;
+}
+
+.wd-post__cta {
+	margin-top: 3.5rem;
+	padding-top: 2.5rem;
+	border-top: var(--wd-line) solid var(--wd-outline-variant);
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 1rem;
+}
+
+.wd-post__cta .wd-body {
+	max-width: 36rem;
+	margin: 0;
+}
+
 /* Full-width page template (service + legal pages) */
 .wd-page-full { padding-block: 4rem; }
 .wd-page-full .entry-content { max-width: 760px; }

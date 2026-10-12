@@ -333,14 +333,54 @@
 	form.querySelectorAll('[data-wd-select] select').forEach(enhanceSelect);
 
 	/*
-	 * Honest "Request availability" form: one step, no simulated check.
-	 * The request is emailed to Favionus, who confirm availability by email.
+	 * Two-step availability flow backed by the real fleet calendar
+	 * (GET /wp-json/favionus/v1/availability). The loading state is shown only
+	 * while the request is running; the result is whatever the server returns.
+	 * If no units are configured, the modal is a plain request form (no claim).
 	 */
-	var body = form.querySelector('[data-fleet-step="form"]');
-	var sent = form.querySelector('[data-fleet-step="sent"]');
+	var t = cfg.i18n || {};
+	var configured = !!cfg.configured;
+	var currentStep = 'ask';
+	var inflight = null;
+	var detailFields = ['#fleet_name', '#fleet_email', '#fleet_company', '#fleet_country'];
 
-	function setError(message) {
-		var box = form.querySelector('[data-fleet-error]');
+	function q(sel) {
+		return form.querySelector(sel);
+	}
+
+	function showStep(name) {
+		currentStep = name;
+		form.querySelectorAll('[data-fleet-step]').forEach(function (step) {
+			var key = step.getAttribute('data-fleet-step');
+			// In request mode (no fleet configured) the dates/units and details are shown together.
+			var on = key === name || (!configured && name === 'details' && key === 'ask');
+			step.hidden = !on;
+			step.classList.toggle('is-active', on);
+		});
+		var needDetails = name === 'details';
+		detailFields.forEach(function (sel) {
+			var el = q(sel);
+			if (el) {
+				el.required = needDetails;
+			}
+		});
+		if (needDetails && configured) {
+			var n = q('#fleet_name');
+			if (n) {
+				n.focus();
+			}
+		}
+	}
+
+	function setText(sel, text) {
+		var el = q(sel);
+		if (el) {
+			el.textContent = text || '';
+		}
+	}
+
+	function setError(sel, message) {
+		var box = q(sel);
 		if (!box) {
 			return;
 		}
@@ -356,26 +396,129 @@
 		});
 	}
 
-	function showStep(step) {
-		[body, sent].forEach(function (el) {
-			if (!el) {
-				return;
-			}
-			var on = el === step;
-			el.hidden = !on;
-			el.classList.toggle('is-active', on);
-		});
+	function fmt(str, a, b) {
+		return String(str || '').replace('%1$d', a).replace('%2$d', b).replace('%d', a);
 	}
 
-	function showForm() {
-		showStep(body);
+	function showResult(kind, title, text) {
+		var wrap = q('[data-fleet-result]');
+		var box = q('[data-fleet-result-box]');
+		if (!wrap) {
+			return;
+		}
+		wrap.hidden = !title && !text;
+		if (box) {
+			box.className = 'wd-fleet-status' + (kind === 'ok' ? ' wd-fleet-status--ok' : ' wd-fleet-status--custom');
+		}
+		setText('[data-fleet-result-title]', title);
+		setText('[data-fleet-result-text]', text);
+	}
+
+	function summary() {
+		var s = q('#fleet_start').value;
+		var e = q('#fleet_end').value;
+		var u = q('#fleet_units').value;
+		setText('[data-fleet-summary]', s && e && u ? s + ' – ' + e + ' · ' + u + ' ' + (t.units || 'units') : '');
+	}
+
+	function applyMode() {
+		var check = form.querySelector('[data-fleet-intro="check"]');
+		var request = form.querySelector('[data-fleet-intro="request"]');
+		var checkWrap = q('[data-fleet-check-wrap]');
+		var back = q('[data-fleet-back]');
+		if (check) {
+			check.hidden = !configured;
+		}
+		if (request) {
+			request.hidden = configured;
+		}
+		if (checkWrap) {
+			checkWrap.hidden = !configured;
+		}
+		if (back) {
+			back.hidden = !configured;
+		}
+		showResult('', '', '');
+		showStep(configured ? 'ask' : 'details');
+	}
+
+	function runCheck() {
+		var params = new URLSearchParams({
+			start: q('#fleet_start').value,
+			end: q('#fleet_end').value,
+			units: q('#fleet_units').value,
+			nonce: cfg.nonce || ''
+		});
+		var checkBtn = q('[data-fleet-check]');
+		if (checkBtn) {
+			checkBtn.disabled = true;
+		}
+		setError('[data-fleet-check-error]', '');
+		showStep('loading');
+
+		var controller = typeof AbortController === 'function' ? new AbortController() : null;
+		inflight = controller;
+
+		fetch((cfg.restUrl || '/wp-json/favionus/v1/availability') + '?' + params.toString(), {
+			method: 'GET',
+			credentials: 'same-origin',
+			headers: { Accept: 'application/json' },
+			signal: controller ? controller.signal : undefined
+		})
+			.then(function (response) {
+				return response.json().then(function (data) {
+					return { ok: response.ok, data: data };
+				});
+			})
+			.then(function (res) {
+				if (!res.ok) {
+					// 400: bad dates → stay on step 1 with the server message.
+					if (res.data && res.data.code === 'favionus_bad_dates') {
+						showStep('ask');
+						setError('[data-fleet-check-error]', res.data.message);
+						return;
+					}
+					throw new Error('check failed');
+				}
+				var d = res.data || {};
+				summary();
+				if (!d.configured) {
+					configured = false;
+					applyMode();
+					return;
+				}
+				if (d.enough) {
+					showResult('ok', t.availableTitle, d.available === 1 ? t.availableOne : fmt(t.availableText, d.available));
+				} else if (d.available > 0) {
+					showResult('custom', t.partialTitle, fmt(t.partialText, d.available, d.requested));
+				} else {
+					showResult('custom', t.noneTitle, t.noneText);
+				}
+				showStep('details');
+			})
+			.catch(function (err) {
+				if (err && err.name === 'AbortError') {
+					return;
+				}
+				// Honest fallback: no result shown, just the request form.
+				summary();
+				showResult('custom', t.requestTitle, t.checkFailed);
+				showStep('details');
+			})
+			.finally(function () {
+				inflight = null;
+				if (checkBtn) {
+					checkBtn.disabled = false;
+				}
+			});
 	}
 
 	function openModal(opener) {
 		lastOpener = opener || null;
-		setError('');
+		setError('[data-fleet-error]', '');
+		setError('[data-fleet-check-error]', '');
 		closeSelects();
-		showForm();
+		applyMode();
 		modal.showModal();
 	}
 
@@ -402,10 +545,22 @@
 	});
 
 	modal.addEventListener('close', function () {
+		if (inflight) {
+			inflight.abort();
+			inflight = null;
+		}
 		closeSelects();
 		if (lastOpener && typeof lastOpener.focus === 'function') {
 			lastOpener.focus();
 		}
+	});
+
+	form.querySelectorAll('[data-fleet-back]').forEach(function (btn) {
+		btn.addEventListener('click', function () {
+			setError('[data-fleet-error]', '');
+			showResult('', '', '');
+			showStep('ask');
+		});
 	});
 
 	form.addEventListener('submit', function (event) {
@@ -415,11 +570,23 @@
 			return;
 		}
 
-		var sendBtn = form.querySelector('[data-fleet-send]');
+		if (currentStep === 'ask') {
+			if (q('#fleet_end').value < q('#fleet_start').value) {
+				setError('[data-fleet-check-error]', cfg.badDates || 'The end date must be after the start date.');
+				return;
+			}
+			runCheck();
+			return;
+		}
+		if (currentStep !== 'details') {
+			return;
+		}
+
+		var sendBtn = q('[data-fleet-send]');
 		if (sendBtn) {
 			sendBtn.disabled = true;
 		}
-		setError('');
+		setError('[data-fleet-error]', '');
 
 		fetch(cfg.ajaxUrl || form.getAttribute('action'), {
 			method: 'POST',
@@ -432,17 +599,16 @@
 			.then(function (payload) {
 				if (payload && payload.success) {
 					form.reset();
-					showStep(sent);
+					showStep('sent');
 					return;
 				}
 				setError(
-					(payload && payload.data && payload.data.message) ||
-						cfg.error ||
-						'Please check your details and try again.'
+					'[data-fleet-error]',
+					(payload && payload.data && payload.data.message) || cfg.error || 'Please check your details and try again.'
 				);
 			})
 			.catch(function () {
-				setError(cfg.error || 'Please check your details and try again.');
+				setError('[data-fleet-error]', cfg.error || 'Please check your details and try again.');
 			})
 			.finally(function () {
 				if (sendBtn) {

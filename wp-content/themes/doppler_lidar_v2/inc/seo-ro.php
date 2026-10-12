@@ -192,6 +192,8 @@ function doppler_lidar_ro_strings() {
 		'Too many checks. Please wait a few minutes or send us a request.' => 'Prea multe verificări. Așteptați câteva minute sau trimiteți-ne o solicitare.',
 		'Please refresh the page and try again.' => 'Reîncărcați pagina și încercați din nou.',
 		'No matching country' => 'Nicio țară găsită',
+		'Phone' => 'Telefon',
+		'Digits, spaces, +, - and parentheses only' => 'Doar cifre, spații, +, - și paranteze',
 		'Request LiDAR availability' => 'Solicitați disponibilitatea LiDAR',
 		'LiDAR availability' => 'Disponibilitate LiDAR',
 		'Request availability' => 'Solicitați disponibilitatea',

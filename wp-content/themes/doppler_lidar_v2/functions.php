@@ -561,6 +561,8 @@ function doppler_lidar_handle_fleet_request() {
 
 	$name     = isset( $_POST['fleet_name'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_name'] ) ) : '';
 	$email    = isset( $_POST['fleet_email'] ) ? sanitize_email( wp_unslash( $_POST['fleet_email'] ) ) : '';
+	$phone    = isset( $_POST['fleet_phone'] ) ? preg_replace( '/[^0-9+()\- ]/', '', sanitize_text_field( wp_unslash( $_POST['fleet_phone'] ) ) ) : '';
+	$phone    = substr( trim( preg_replace( '/\s+/', ' ', $phone ) ), 0, 30 );
 	$company  = isset( $_POST['fleet_company'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_company'] ) ) : '';
 	$country  = isset( $_POST['fleet_country'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_country'] ) ) : '';
 	$location = isset( $_POST['fleet_location'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_location'] ) ) : '';
@@ -588,6 +590,7 @@ function doppler_lidar_handle_fleet_request() {
 	$lines = array(
 		'Name: ' . $name,
 		'Email: ' . $email,
+		'Phone: ' . ( '' !== $phone ? $phone : '-' ),
 		'Company: ' . $company,
 		'Country: ' . $countries[ $country ],
 		'Project location: ' . ( '' !== $location ? $location : '-' ),

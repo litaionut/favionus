@@ -558,6 +558,10 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 					<input id="fleet_email" name="fleet_email" type="email" autocomplete="email">
 				</div>
 				<div class="wd-field">
+					<label class="wd-label" for="fleet_phone"><?php esc_html_e( 'Phone', 'doppler_lidar' ); ?></label>
+					<input id="fleet_phone" name="fleet_phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="30" pattern="[0-9+\(\)\- ]{6,30}" title="<?php esc_attr_e( 'Digits, spaces, +, - and parentheses only', 'doppler_lidar' ); ?>">
+				</div>
+				<div class="wd-field">
 					<label class="wd-label" for="fleet_company"><?php esc_html_e( 'Company', 'doppler_lidar' ); ?></label>
 					<input id="fleet_company" name="fleet_company" type="text" autocomplete="organization">
 				</div>

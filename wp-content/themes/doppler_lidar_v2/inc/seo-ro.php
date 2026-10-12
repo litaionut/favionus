@@ -69,7 +69,7 @@ function doppler_lidar_ro_strings() {
 		'Turnkey wind LiDAR campaigns' => 'Campanii LiDAR la cheie pentru vânt',
 		'Bankable wind data.' => 'Date de vânt bancabile.',
 		'Delivered turnkey.' => 'Campanii LiDAR la cheie.',
-		'Complete wind LiDAR measurement campaigns for onshore wind projects, from campaign design and deployment to 24/7 remote monitoring and quality-controlled data delivery. Based in Făgăraș, working in Romania and across Europe.' => 'Campanii complete de măsurare a vântului cu LiDAR pentru proiecte eoliene onshore, de la proiectarea campaniei și instalare până la monitorizare la distanță 24/7 și livrarea datelor verificate. Echipă cu sediul în Făgăraș, cu proiecte în România și în Europa.',
+		'Complete wind LiDAR measurement campaigns for onshore wind projects, from campaign design and deployment to 24/7 remote monitoring and quality-controlled data delivery..' => 'Campanii complete de măsurare a vântului cu LiDAR pentru proiecte eoliene onshore, de la proiectarea campaniei și instalare până la monitorizare la distanță 24/7 și livrarea datelor verificate..',
 		'Plan a campaign' => 'Planificați o campanie',
 		'Check LiDAR availability' => 'Verificați disponibilitatea LiDAR',
 		'Vertical profiling wind LiDAR unit' => 'LiDAR pentru vânt cu profil vertical',

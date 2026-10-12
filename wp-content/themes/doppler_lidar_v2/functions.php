@@ -253,7 +253,6 @@ function doppler_lidar_scripts() {
 				'restUrl'    => esc_url_raw( rest_url( 'favionus/v1/availability' ) ),
 				'nonce'      => wp_create_nonce( 'favionus_availability' ),
 				'configured' => function_exists( 'doppler_lidar_fleet_active_count' ) && doppler_lidar_fleet_active_count() > 0,
-				'badDates'   => __( 'The end date must be after the start date.', 'doppler_lidar' ),
 				'i18n'       => array(
 					'availableTitle'   => __( 'Units available', 'doppler_lidar' ),
 					/* translators: %d: number of free units */
@@ -568,10 +567,9 @@ function doppler_lidar_handle_fleet_request() {
 	$location = isset( $_POST['fleet_location'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_location'] ) ) : '';
 	$units    = isset( $_POST['fleet_units'] ) ? absint( $_POST['fleet_units'] ) : 0;
 	$start    = isset( $_POST['fleet_start'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_start'] ) ) : '';
-	$end      = isset( $_POST['fleet_end'] ) ? sanitize_text_field( wp_unslash( $_POST['fleet_end'] ) ) : '';
 
 	$countries = doppler_lidar_fleet_countries();
-	$period    = function_exists( 'doppler_lidar_fleet_period' ) ? doppler_lidar_fleet_period( $start, $end ) : new WP_Error( 'x', 'x' );
+	$period    = function_exists( 'doppler_lidar_fleet_period' ) ? doppler_lidar_fleet_period( $start, '' ) : new WP_Error( 'x', 'x' );
 	if ( '' === $name || ! is_email( $email ) || '' === $company || $units < 1 || $units > 99 || ! isset( $countries[ $country ] ) || is_wp_error( $period ) ) {
 		wp_send_json_error(
 			array( 'message' => __( 'Please fill in all fields with a valid work email, then try again.', 'doppler_lidar' ) ),
@@ -582,7 +580,7 @@ function doppler_lidar_handle_fleet_request() {
 	// Re-run the availability check on the server (never trust the browser's result).
 	if ( function_exists( 'doppler_lidar_fleet_active_count' ) && doppler_lidar_fleet_active_count() > 0 ) {
 		$free  = doppler_lidar_fleet_free_units( $period[0], $period[1] );
-		$check = sprintf( '%d of %d requested units free in the fleet calendar (checked %s)', $free, $units, current_time( 'Y-m-d H:i' ) );
+		$check = sprintf( '%d of %d requested units free on the start date (checked %s)', $free, $units, current_time( 'Y-m-d H:i' ) );
 	} else {
 		$check = 'Not checked (no units configured in Tools > LiDAR fleet)';
 	}
@@ -594,7 +592,7 @@ function doppler_lidar_handle_fleet_request() {
 		'Company: ' . $company,
 		'Country: ' . $countries[ $country ],
 		'Project location: ' . ( '' !== $location ? $location : '-' ),
-		'Period: ' . $period[0] . ' to ' . $period[1],
+		'Preferred start date: ' . $period[0],
 		'Number of units: ' . $units,
 		'Availability check: ' . $check,
 		'Note: nothing is booked yet. Reply by email within 1 business day.',

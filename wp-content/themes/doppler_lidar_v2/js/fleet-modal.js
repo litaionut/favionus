@@ -416,9 +416,8 @@
 
 	function summary() {
 		var s = q('#fleet_start').value;
-		var e = q('#fleet_end').value;
 		var u = q('#fleet_units').value;
-		setText('[data-fleet-summary]', s && e && u ? s + ' – ' + e + ' · ' + u + ' ' + (t.units || 'units') : '');
+		setText('[data-fleet-summary]', s && u ? s + ' · ' + u + ' ' + (t.units || 'units') : '');
 	}
 
 	function applyMode() {
@@ -445,7 +444,6 @@
 	function runCheck() {
 		var params = new URLSearchParams({
 			start: q('#fleet_start').value,
-			end: q('#fleet_end').value,
 			units: q('#fleet_units').value,
 			nonce: cfg.nonce || ''
 		});
@@ -571,10 +569,6 @@
 		}
 
 		if (currentStep === 'ask') {
-			if (q('#fleet_end').value < q('#fleet_start').value) {
-				setError('[data-fleet-check-error]', cfg.badDates || 'The end date must be after the start date.');
-				return;
-			}
 			runCheck();
 			return;
 		}

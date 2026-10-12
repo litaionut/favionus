@@ -178,7 +178,8 @@ final class Favionus_SEO {
 				'email'       => 'contact@favionus.com',
 				'address'     => array(
 					'@type'           => 'PostalAddress',
-					'addressLocality' => 'Bucharest',
+					'addressLocality' => 'Făgăraș',
+					'addressRegion'   => 'Brașov',
 					'addressCountry'  => 'RO',
 				),
 				'areaServed'  => array(
@@ -242,7 +243,7 @@ final class Favionus_SEO {
 		echo '- Home: ' . home_url( '/' ) . "\n";
 		echo '- Contact: ' . home_url( '/#contact' ) . "\n";
 		echo "- Email: contact@favionus.com\n";
-		echo "- Location: Bucharest, Romania — campaigns across Europe\n\n";
+		echo "- Location: Făgăraș, Romania — campaigns across Europe\n\n";
 		echo "## Services\n";
 		echo '- ' . home_url( '/wind-lidar-measurement-campaigns/' ) . "\n";
 		echo '- ' . home_url( '/wind-resource-assessment/' ) . "\n";

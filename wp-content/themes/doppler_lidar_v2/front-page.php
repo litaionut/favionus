@@ -24,7 +24,7 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 				<?php esc_html_e( 'Delivered turnkey.', 'doppler_lidar' ); ?>
 			</h1>
 			<p class="wd-body wd-lede--narrow">
-				<?php esc_html_e( 'Complete wind LiDAR measurement campaigns for onshore wind projects, from campaign design and deployment to 24/7 remote monitoring and quality-controlled data delivery. Based in Bucharest, working in Romania and across Europe.', 'doppler_lidar' ); ?>
+				<?php esc_html_e( 'Complete wind LiDAR measurement campaigns for onshore wind projects, from campaign design and deployment to 24/7 remote monitoring and quality-controlled data delivery. Based in Făgăraș, working in Romania and across Europe.', 'doppler_lidar' ); ?>
 			</p>
 			<div class="wd-hero__actions">
 				<a class="wd-btn wd-btn--primary wd-btn--lg" href="#contact"><?php esc_html_e( 'Plan a campaign', 'doppler_lidar' ); ?></a>

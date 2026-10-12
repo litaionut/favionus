@@ -146,7 +146,8 @@ function doppler_lidar_schema_graph( $graph ) {
 		'description' => 'Turnkey wind LiDAR measurement campaigns and wind LiDAR rental for onshore wind projects in Romania and Europe.',
 		'address'     => array(
 			'@type'           => 'PostalAddress',
-			'addressLocality' => 'București',
+			'addressLocality' => 'Făgăraș',
+			'addressRegion'   => 'Brașov',
 			'addressCountry'  => 'RO',
 		),
 		'areaServed'  => array(

@@ -32,4 +32,4 @@ Pentru dezvoltatori de proiecte eoliene onshore, proprietari care pregătesc un 
 
 Vedeți și: [Campanii de măsurare a vântului cu LiDAR](/ro/campanii-masurare-vant-lidar/) · [LiDAR sau turn de măsură?](/ro/blog/lidar-sau-turn-de-masura/)
 
-Favionus, București · contact@favionus.com · [Planificați o campanie](/ro/#contact)
+Favionus, Făgăraș · contact@favionus.com · [Planificați o campanie](/ro/#contact)

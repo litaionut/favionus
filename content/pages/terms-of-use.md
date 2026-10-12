@@ -24,6 +24,6 @@ To the fullest extent permitted by law, Favionus is not liable for damages arisi
 
 ## Contact
 
-Favionus S.R.L., Bucharest, Romania · contact@favionus.com
+Favionus S.R.L., Făgăraș, Romania · contact@favionus.com
 
 *Last updated: 2026-10-10*

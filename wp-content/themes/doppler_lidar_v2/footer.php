@@ -21,7 +21,7 @@ $phone    = trim( (string) get_theme_mod( 'doppler_lidar_phone', '' ) );
 					<div class="site-footer__contact">
 						<p class="wd-caption">
 							<span class="material-symbols-outlined" aria-hidden="true">location_on</span>
-							<?php esc_html_e( 'Bucharest, Romania', 'doppler_lidar' ); ?>
+							<?php esc_html_e( 'Făgăraș, Romania', 'doppler_lidar' ); ?>
 						</p>
 						<p class="wd-caption">
 							<span class="material-symbols-outlined" aria-hidden="true">mail</span>

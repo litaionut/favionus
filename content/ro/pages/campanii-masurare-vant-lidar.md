@@ -1,6 +1,6 @@
 # Campanii de măsurare a vântului cu LiDAR, la cheie
 
-Favionus realizează campanii LiDAR la cheie pentru măsurarea vântului în proiecte eoliene onshore din România și din Europa: planificare, instalare, alimentare autonomă, monitorizare la distanță 24/7 și date verificate. Echipa noastră are sediul în București.
+Favionus realizează campanii LiDAR la cheie pentru măsurarea vântului în proiecte eoliene onshore din România și din Europa: planificare, instalare, alimentare autonomă, monitorizare la distanță 24/7 și date verificate. Echipa noastră are sediul în Făgăraș.
 
 ## Ce include o campanie de măsurare a vântului
 

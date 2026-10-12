@@ -2,7 +2,7 @@
 
 **Favionus S.R.L.** ("Favionus", "we", "us") operates https://favionus.com/ and is the data controller for the personal data described below.
 
-Registered office: Bucharest, Romania. Company registration number (ONRC) and tax ID (CUI): to be added.
+Registered office: Făgăraș, Romania. Company registration number (ONRC) and tax ID (CUI): to be added.
 
 ## Data we collect
 
@@ -31,6 +31,6 @@ You have the right to access, correct, delete, restrict or object to the process
 
 ## Contact
 
-Favionus S.R.L., Bucharest, Romania · contact@favionus.com
+Favionus S.R.L., Făgăraș, Romania · contact@favionus.com
 
 *Last updated: 2026-10-10*

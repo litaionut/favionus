@@ -20,4 +20,4 @@ Structured datasets, availability metrics and campaign reporting throughout the 
 
 Onshore wind developers, owners preparing repowering, and advisors who need rotor-height measurements without building an internal measurement ops team.
 
-Favionus — Bucharest-based, Europe campaigns — contact@favionus.com
+Favionus — Făgăraș-based, Europe campaigns — contact@favionus.com

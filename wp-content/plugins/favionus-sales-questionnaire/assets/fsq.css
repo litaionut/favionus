@@ -1,0 +1,13 @@
+.fsq-wrap{max-width:900px}
+.fsq-card{background:#fff;border:1px solid #c3c4c7;border-radius:6px;padding:20px 24px;margin:12px 0}
+.fsq-card h2{font-size:1.4em;margin-top:0}
+.fsq-options{display:flex;flex-wrap:wrap;gap:10px}
+.fsq-opt{white-space:normal!important;text-align:left}
+.fsq-progress{position:relative;background:#f0f0f1;border-radius:4px;height:22px;overflow:hidden}
+.fsq-bar{background:#2271b1;height:100%;transition:width .2s}
+.fsq-progress span{position:absolute;left:10px;top:2px;font-size:12px;color:#1d2327}
+.fsq-nav{display:flex;justify-content:space-between}
+.fsq-actions .button{margin-right:6px}
+.fsq-outcome{font-weight:600;font-size:1.1em}
+.fsq-status{margin-left:8px}
+.fsq-wrap .widefat th{width:45%}

@@ -1,0 +1,4 @@
+# Deny direct web access to the question tree, docs and tools (admin-only data).
+<FilesMatch "^(question-tree\.json|README\.md)$">
+  Require all denied
+</FilesMatch>

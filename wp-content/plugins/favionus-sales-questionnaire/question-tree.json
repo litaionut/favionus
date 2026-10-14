@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "title_ro": "EXEMPLU – arbore demonstrativ, va fi înlocuit cu cel de la Favionus Sales",
+  "title_en": "EXAMPLE – demo tree, to be replaced by the Favionus Sales tree",
+  "start": "q_service",
+  "nodes": [
+    { "id": "q_service", "type": "choice", "text_ro": "[EXEMPLU] Ce caută clientul?", "text_en": "[EXAMPLE] What does the client need?",
+      "options": [
+        { "label_ro": "Campanie de măsurare completă (turnkey)", "label_en": "Turnkey campaign", "value": "turnkey", "next": "q_site_count" },
+        { "label_ro": "Închiriere LiDAR", "label_en": "LiDAR rental", "value": "rental", "next": "q_rent_months" },
+        { "label_ro": "Nu știe încă", "label_en": "Not sure yet", "value": "unsure", "next": "q_notes" }
+      ] },
+    { "id": "q_site_count", "type": "number", "text_ro": "[EXEMPLU] Câte amplasamente?", "min": 1, "max": 50, "unit": "amplasamente", "required": true, "next": "q_height" },
+    { "id": "q_height", "type": "choice", "text_ro": "[EXEMPLU] Înălțimea de măsurare necesară?", "text_en": "[EXAMPLE] Required height?",
+      "options": [
+        { "label_ro": "Până la 200 m", "value": "200", "next": "q_duration" },
+        { "label_ro": "Peste 200 m", "value": "200+", "next": "q_duration" }
+      ] },
+    { "id": "q_duration", "type": "choice", "text_ro": "[EXEMPLU] Durata campaniei?",
+      "options": [
+        { "label_ro": "3–6 luni", "value": "3-6" },
+        { "label_ro": "12 luni", "value": "12" }
+      ], "next": "q_notes" },
+    { "id": "q_rent_months", "type": "number", "text_ro": "[EXEMPLU] Pentru câte luni închiriază?", "unit": "luni", "min": 1, "next": "q_notes" },
+    { "id": "q_notes", "type": "text", "text_ro": "[EXEMPLU] Alte detalii (amplasament, termene)?", "placeholder_ro": "opțional", "next": "end_offer" },
+    { "id": "end_offer", "type": "end", "text_ro": "[EXEMPLU] Pregătește oferta pe baza răspunsurilor.", "text_en": "[EXAMPLE] Prepare the offer." }
+  ]
+}

@@ -21,3 +21,21 @@
 .fsq-sections li.is-done{background:#d5e7f5;color:#135e96}
 .fsq-sections li.is-current{background:#2271b1;color:#fff}
 .fsq-sec td{font-weight:600;background:#f0f6fc!important}
+/* Pipeline */
+.fsp-wrap{max-width:none}
+.fsp-board{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;align-items:start;overflow-x:auto}
+.fsp-col{background:#f0f0f1;border-radius:6px;padding:8px;min-height:200px}
+.fsp-col.is-over{outline:2px dashed #2271b1}
+.fsp-col-head{display:flex;justify-content:space-between;gap:6px;padding:4px 4px 8px;font-size:13px}
+.fsp-col-head span{color:#646970;font-size:12px}
+.fsp-card{background:#fff;border:1px solid #c3c4c7;border-radius:4px;padding:8px;margin-bottom:8px;cursor:grab;font-size:12px}
+.fsp-card.is-dragging{opacity:.5}
+.fsp-card.is-castigat{border-left:4px solid #00a32a}
+.fsp-card.is-pierdut{border-left:4px solid #d63638;opacity:.75}
+.fsp-card-title{display:block;font-weight:600;font-size:13px;margin-bottom:4px;text-decoration:none}
+.fsp-badge{display:inline-block;font-size:11px;background:#f0f0f1;border-radius:8px;padding:0 6px;margin-bottom:4px}
+.fsp-line{margin:2px 0;color:#3c434a}
+.fsp-value{font-weight:600}
+.fsp-next.is-overdue{color:#d63638}
+.fsp-stage-select{margin-top:6px;width:100%;font-size:12px}
+.fsp-add{display:block;text-align:center;padding:4px;text-decoration:none}

@@ -24,3 +24,15 @@ strips them and appends “(de confirmat)”. Internal copy/JSON keeps them.
 
 Validate before replacing the tree: `node tools/validate-tree.js path/to/tree.json`. Replace by uploading a new
 `question-tree.json` over the plugin's file – no code change needed.
+
+# Pipeline CRM (kanban) – since 0.2.0
+Menu **Favionus Sales → Pipeline / Deal-uri / Companii / Contacte**. Same rules: `manage_options` + nonces, no public output.
+Data: private CPTs `fsp_company` (name, vat, country, website, notes), `fsp_contact` (name, role, email, phone, company, notes),
+`fsp_deal` (title, company, contacts[], stage, outcome, location, site_type, height, duration, start_date, units, value_eur,
+next_step, next_date, record, notes, log). Meta keys are prefixed `_fsp_`. Stage changes (board or form) append
+`{t, from, to, outcome, user}` to `_fsp_log`.
+Stages: contact, calificare, oferta, negociere, inchis (+ outcome castigat|pierdut).
+Board: drag & drop (admin-ajax `fsp_move`), fallback dropdown on each card, search, “hide lost”, column count + EUR total
+(lost deals excluded from total), overdue next-step date in red. Click a card to edit.
+Questionnaire record → **Creează deal din fișă**: finds/creates the company and contact by name, prefills location, terrain,
+height, duration, units (num_sites), next step, notes (start, budget, meeting notes), links the record, stage = Calificare.

@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Favionus Sales Questionnaire
- * Description: Chestionar de vânzări ghidat, doar pentru administratori (wp-admin). Nu are nicio ieșire publică.
- * Version: 0.1.0
+ * Plugin Name: Favionus Sales
+ * Description: Chestionar de vânzări ghidat + pipeline CRM (kanban), doar pentru administratori (wp-admin). Nu are nicio ieșire publică.
+ * Version: 0.2.0
  * Author: Favionus
  * Requires PHP: 7.4
  * License: Proprietary
@@ -10,7 +10,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'FSQ_VERSION', '0.1.0' );
+define( 'FSQ_VERSION', '0.2.0' );
 define( 'FSQ_DIR', plugin_dir_path( __FILE__ ) );
 define( 'FSQ_URL', plugin_dir_url( __FILE__ ) );
 define( 'FSQ_CPT', 'favionus_sales_rec' );
@@ -45,7 +45,8 @@ add_filter( 'wpseo_sitemap_exclude_post_type', function ( $ex, $pt ) { return $p
 
 /* ---------- Admin menu ---------- */
 add_action( 'admin_menu', function () {
-	$hook = add_menu_page( 'Chestionar vânzări', 'Chestionar vânzări', FSQ_CAP, 'fsq-run', 'fsq_render_run', 'dashicons-clipboard', 58 );
+	$hook = add_menu_page( 'Chestionar vânzări', 'Favionus Sales', FSQ_CAP, 'fsq-run', 'fsq_render_run', 'dashicons-clipboard', 58 );
+	add_submenu_page( 'fsq-run', 'Chestionar vânzări', 'Chestionar', FSQ_CAP, 'fsq-run', 'fsq_render_run' );
 	$list = add_submenu_page( 'fsq-run', 'Fișe salvate', 'Fișe salvate', FSQ_CAP, 'fsq-records', 'fsq_render_records' );
 	foreach ( array( $hook, $list ) as $h ) {
 		add_action( 'load-' . $h, 'fsq_noindex' );
@@ -156,6 +157,7 @@ function fsq_render_records() {
 		$answers = json_decode( (string) get_post_meta( $view, '_fsq_answers', true ), true );
 		echo '<h1>' . esc_html( get_the_title( $p ) ) . '</h1>';
 		echo '<p><a href="' . esc_url( admin_url( 'admin.php?page=fsq-records' ) ) . '">&larr; Înapoi la listă</a></p>';
+		if ( function_exists( 'fsp_record_actions' ) ) { fsp_record_actions( $view ); }
 		echo '<table class="widefat striped"><tbody>';
 		echo '<tr><th>Client</th><td>' . esc_html( get_post_meta( $view, '_fsq_client', true ) ) . '</td></tr>';
 		echo '<tr><th>Companie</th><td>' . esc_html( get_post_meta( $view, '_fsq_company', true ) ) . '</td></tr>';
@@ -181,3 +183,5 @@ function fsq_render_records() {
 	}
 	echo '</tbody></table></div>';
 }
+
+require_once FSQ_DIR . 'includes/pipeline.php';

@@ -92,6 +92,7 @@ add_action( 'wp_ajax_fsq_save', function () {
 	$company = sanitize_text_field( wp_unslash( $_POST['company'] ?? '' ) );
 	$notes   = sanitize_textarea_field( wp_unslash( $_POST['notes'] ?? '' ) );
 	$summary = sanitize_textarea_field( wp_unslash( $_POST['summary'] ?? '' ) );
+	$offer   = sanitize_textarea_field( wp_unslash( $_POST['offer'] ?? '' ) );
 	$raw     = json_decode( wp_unslash( $_POST['answers'] ?? '[]' ), true );
 	if ( ! is_array( $raw ) ) { wp_send_json_error( 'bad answers', 400 ); }
 
@@ -100,6 +101,8 @@ add_action( 'wp_ajax_fsq_save', function () {
 		if ( ! is_array( $a ) ) { continue; }
 		$answers[] = array(
 			'id'       => sanitize_key( $a['id'] ?? '' ),
+			'section'  => sanitize_text_field( $a['section'] ?? '' ),
+			'field'    => sanitize_key( $a['field'] ?? '' ),
 			'question' => sanitize_text_field( $a['question'] ?? '' ),
 			'answer'   => sanitize_textarea_field( (string) ( $a['answer'] ?? '' ) ),
 			'value'    => sanitize_text_field( (string) ( $a['value'] ?? '' ) ),
@@ -118,6 +121,7 @@ add_action( 'wp_ajax_fsq_save', function () {
 	update_post_meta( $id, '_fsq_client', $client );
 	update_post_meta( $id, '_fsq_company', $company );
 	update_post_meta( $id, '_fsq_notes', $notes );
+	update_post_meta( $id, '_fsq_offer', $offer );
 	update_post_meta( $id, '_fsq_answers', wp_slash( wp_json_encode( $answers, JSON_UNESCAPED_UNICODE ) ) );
 	wp_send_json_success( array( 'id' => $id, 'url' => admin_url( 'admin.php?page=fsq-records&view=' . $id ) ) );
 } );
@@ -160,7 +164,8 @@ function fsq_render_records() {
 		foreach ( (array) $answers as $a ) {
 			echo '<tr><th>' . esc_html( $a['question'] ?? '' ) . '</th><td>' . nl2br( esc_html( $a['answer'] ?? '' ) ) . '</td></tr>';
 		}
-		echo '</tbody></table><h2>Rezumat (text pentru ofertă)</h2><textarea class="large-text code" rows="14" readonly>' . esc_textarea( $p->post_content ) . '</textarea></div>';
+		echo '</tbody></table><h2>Scope pentru client (fără marcaje [confirm])</h2><textarea class="large-text code" rows="10" readonly>' . esc_textarea( get_post_meta( $view, '_fsq_offer', true ) ) . '</textarea>';
+		echo '<h2>Fișă internă</h2><textarea class="large-text code" rows="14" readonly>' . esc_textarea( $p->post_content ) . '</textarea></div>';
 		return;
 	}
 	echo '<h1>Fișe salvate</h1>';

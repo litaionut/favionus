@@ -1,56 +1,60 @@
 #!/usr/bin/env node
-/* Validate a Favionus sales question tree.  Usage: node validate-tree.js path/to/question-tree.json
- * Exit code 1 on errors (bad structure, duplicate/dangling ids, missing start); warnings for cycles,
- * unreachable nodes, paths that never reach an end node. */
+/* Validate a Favionus sales qualification tree (schema of /workspace/sales-form/qualification_tree.json).
+ * Usage: node tools/validate-tree.js [path]   (default: ../question-tree.json)
+ * Errors (exit 1): bad structure/type, duplicate ids, dangling next, missing start/summary, multi/single without options,
+ *   input without next, node that cannot reach a summary, unreachable node, offer_mapping on unknown field/value.
+ * Warnings: cycles, [confirm] markers (unverified technical claims). */
 'use strict';
-const fs = require('fs');
-const file = process.argv[2] || require('path').join(__dirname, '..', 'question-tree.json');
-const errors = [], warnings = [];
-let tree;
-try { tree = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { console.error('ERROR: cannot parse ' + file + ': ' + e.message); process.exit(1); }
-const TYPES = ['choice', 'text', 'number', 'end'];
-const nodes = {};
-if (!Array.isArray(tree.nodes)) errors.push('"nodes" must be an array');
-(tree.nodes || []).forEach((n, i) => {
-  const where = `nodes[${i}]` + (n && n.id ? ` (${n.id})` : '');
-  if (!n || typeof n.id !== 'string' || !/^[a-z0-9_\-]+$/.test(n.id)) return errors.push(`${where}: id must be a lowercase string [a-z0-9_-]`);
-  if (nodes[n.id]) errors.push(`${where}: duplicate id`);
-  nodes[n.id] = n;
-  if (!TYPES.includes(n.type)) errors.push(`${where}: type must be one of ${TYPES.join('|')}`);
-  if (!n.text_ro && !n.text_en && !n.text && n.type !== 'end') errors.push(`${where}: needs text_ro or text_en`);
-  if (n.type === 'choice') {
-    if (!Array.isArray(n.options) || !n.options.length) errors.push(`${where}: choice needs non-empty options`);
-    (n.options || []).forEach((o, j) => {
-      if (!o.label_ro && !o.label_en && !o.label) errors.push(`${where}.options[${j}]: needs label_ro or label_en`);
-      if (!o.next && !n.next) errors.push(`${where}.options[${j}]: no "next" and node has no default "next"`);
-    });
-  } else if (n.type === 'text' || n.type === 'number') {
-    if (!n.next) errors.push(`${where}: ${n.type} needs "next"`);
-  } else if (n.type === 'end' && (n.next || n.options)) warnings.push(`${where}: end node has next/options (ignored)`);
+const fs = require('fs'), path = require('path');
+const file = process.argv[2] || path.join(__dirname, '..', 'question-tree.json');
+const E = [], W = [];
+let T;
+try { T = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { console.error('ERROR: cannot parse ' + file + ': ' + e.message); process.exit(1); }
+const TYPES = ['single', 'multi', 'input', 'summary'];
+const N = {};
+if (!Array.isArray(T.nodes)) E.push('"nodes" must be an array');
+(T.nodes || []).forEach((n, i) => {
+  const w = `nodes[${i}]` + (n && n.id ? ` (${n.id})` : '');
+  if (!n || typeof n.id !== 'string' || !n.id) return E.push(`${w}: missing id`);
+  if (N[n.id]) E.push(`${w}: duplicate id`);
+  N[n.id] = n;
+  if (!TYPES.includes(n.type)) E.push(`${w}: type must be ${TYPES.join('|')}`);
+  if (!n.question) E.push(`${w}: missing question`);
+  if (!n.field) W.push(`${w}: no field (answers stored under node id)`);
+  if ((n.type === 'single' || n.type === 'multi') && !(n.options || []).length) E.push(`${w}: ${n.type} needs options`);
+  if (n.type === 'single') (n.options || []).forEach((o, j) => { if (!o.next && !n.next) E.push(`${w}.options[${j}]: no next`); });
+  if (n.type === 'multi') { const s = new Set((n.options || []).map(o => o.next || n.next)); if (s.size > 1 && !n.next) W.push(`${w}: multi options point to different next ids; UI follows node.next or the first ticked option`); }
+  if (n.type === 'input' && !n.next) E.push(`${w}: input needs next`);
 });
-const edges = id => { const n = nodes[id]; if (!n || n.type === 'end') return [];
-  return n.type === 'choice' ? [...new Set((n.options || []).map(o => o.next || n.next).filter(Boolean))] : (n.next ? [n.next] : []); };
-Object.keys(nodes).forEach(id => edges(id).forEach(t => { if (!nodes[t]) errors.push(`${id}: next -> "${t}" does not exist (dangling)`); }));
-if (!tree.start) errors.push('missing "start"'); else if (!nodes[tree.start]) errors.push(`start "${tree.start}" does not exist`);
-if (!Object.values(nodes).some(n => n.type === 'end')) errors.push('no end node');
-if (nodes[tree.start]) {
-  const seen = new Set(), stack = [tree.start];
-  while (stack.length) { const id = stack.pop(); if (seen.has(id) || !nodes[id]) continue; seen.add(id); edges(id).forEach(t => stack.push(t)); }
-  Object.keys(nodes).filter(id => !seen.has(id)).forEach(id => warnings.push(`${id}: unreachable from start`));
-  // cycles (DFS colouring)
-  const col = {}; const cyc = new Set();
-  const dfs = (id, path) => { col[id] = 1; for (const t of edges(id)) { if (!nodes[t]) continue;
-      if (col[t] === 1) cyc.add([...path.slice(path.indexOf(t)), t].join(' -> ')); else if (!col[t]) dfs(t, [...path, t]); } col[id] = 2; };
-  dfs(tree.start, [tree.start]);
-  cyc.forEach(c => warnings.push('cycle: ' + c));
-  // nodes that can never reach an end
-  const canEnd = new Set(Object.keys(nodes).filter(id => nodes[id].type === 'end'));
-  let changed = true; while (changed) { changed = false; for (const id of Object.keys(nodes)) if (!canEnd.has(id) && edges(id).some(t => canEnd.has(t))) { canEnd.add(id); changed = true; } }
-  [...seen].filter(id => !canEnd.has(id)).forEach(id => warnings.push(`${id}: no path to an end node`));
+const nx = id => { const n = N[id]; if (!n || n.type === 'summary') return [];
+  return [...new Set([...(n.options || []).map(o => o.next), n.next].filter(Boolean))]; };
+Object.keys(N).forEach(id => nx(id).forEach(t => { if (!N[t]) E.push(`${id} -> "${t}" missing (dangling)`); }));
+const start = T.start_node;
+if (!start || !N[start]) E.push(`start_node "${start}" missing`);
+if (!Object.values(N).some(n => n.type === 'summary')) E.push('no summary node');
+if (N[start]) {
+  const seen = new Set(), st = [start];
+  while (st.length) { const x = st.pop(); if (seen.has(x) || !N[x]) continue; seen.add(x); st.push(...nx(x)); }
+  Object.keys(N).filter(x => !seen.has(x)).forEach(x => E.push(`${x}: unreachable from start`));
+  const col = {}, cyc = new Set();
+  const dfs = (id, p) => { col[id] = 1; for (const t of nx(id)) { if (!N[t]) continue; if (col[t] === 1) cyc.add([...p.slice(p.indexOf(t)), t].join(' -> ')); else if (!col[t]) dfs(t, [...p, t]); } col[id] = 2; };
+  dfs(start, [start]); cyc.forEach(c => W.push('cycle: ' + c));
 }
-if (/EXEMPLU|EXAMPLE/.test(JSON.stringify(tree))) warnings.push('tree is marked EXAMPLE – replace with the real Favionus Sales tree before use');
-console.log(`File: ${file}\nNodes: ${Object.keys(nodes).length}, start: ${tree.start}`);
-warnings.forEach(w => console.log('WARN:  ' + w));
-errors.forEach(e => console.log('ERROR: ' + e));
-console.log(errors.length ? `FAILED (${errors.length} errors, ${warnings.length} warnings)` : `OK (${warnings.length} warnings)`);
-process.exit(errors.length ? 1 : 0);
+const ok = new Set(Object.keys(N).filter(x => N[x].type === 'summary')); let ch = true;
+while (ch) { ch = false; for (const x of Object.keys(N)) if (!ok.has(x) && nx(x).some(y => ok.has(y))) { ok.add(x); ch = true; } }
+Object.keys(N).filter(x => !ok.has(x)).forEach(x => E.push(`${x}: cannot reach summary`));
+const fields = {}; Object.values(N).forEach(n => { fields[n.field || n.id] = new Set((n.options || []).map(o => String(o.value))); });
+(T.offer_mapping || []).forEach((r, i) => {
+  if (!r.if || !r.scope) return E.push(`offer_mapping[${i}]: needs if + scope`);
+  Object.entries(r.if).forEach(([f, v]) => {
+    if (!fields[f]) return E.push(`offer_mapping[${i}]: unknown field "${f}"`);
+    if (v === '*' || !fields[f].size) return;
+    (Array.isArray(v) ? v : [v]).forEach(x => { if (!fields[f].has(String(x))) E.push(`offer_mapping[${i}]: field "${f}" has no option value "${x}"`); });
+  });
+});
+const confirms = (JSON.stringify(T).match(/\[confirm[^\]]*\]/gi) || []).length;
+if (confirms) W.push(`${confirms} [confirm] marker(s): unverified technical claims (highlighted in UI, stripped/flagged in client export)`);
+console.log(`File: ${file}\nNodes: ${Object.keys(N).length}, start: ${start}, sections: ${[...new Set(Object.values(N).map(n => n.section))].length}, mapping rules: ${(T.offer_mapping || []).length}`);
+W.forEach(w => console.log('WARN:  ' + w)); E.forEach(e => console.log('ERROR: ' + e));
+console.log(E.length ? `FAILED (${E.length} errors, ${W.length} warnings)` : `OK (${W.length} warnings)`);
+process.exit(E.length ? 1 : 0);

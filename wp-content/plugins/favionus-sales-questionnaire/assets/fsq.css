@@ -11,3 +11,13 @@
 .fsq-outcome{font-weight:600;font-size:1.1em}
 .fsq-status{margin-left:8px}
 .fsq-wrap .widefat th{width:45%}
+.fsq-help{background:#f6f7f7;border-left:4px solid #72aee6;padding:8px 12px;color:#3c434a}
+.fsq-confirm{background:#fcf0c3;color:#8a4b00;font-weight:600;padding:0 3px;border-radius:2px}
+.fsq-confirm-note{background:#fcf9e8;border-left:4px solid #dba617;padding:8px 12px}
+.fsq-multi{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.fsq-check{font-size:14px}
+.fsq-sections{display:flex;flex-wrap:wrap;gap:4px;list-style:none;margin:0 0 6px;padding:0}
+.fsq-sections li{margin:0;padding:2px 8px;border-radius:10px;background:#f0f0f1;font-size:11px;color:#646970}
+.fsq-sections li.is-done{background:#d5e7f5;color:#135e96}
+.fsq-sections li.is-current{background:#2271b1;color:#fff}
+.fsq-sec td{font-weight:600;background:#f0f6fc!important}

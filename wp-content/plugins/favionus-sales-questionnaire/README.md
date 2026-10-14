@@ -1,30 +1,26 @@
 # Favionus Sales Questionnaire (admin-only)
 
-Guided sales-meeting questionnaire in wp-admin → **Chestionar vânzări**. Visible only to users with `manage_options`.
-No front-end output, no shortcode, no REST route; saving uses `admin-ajax` (`wp_ajax_fsq_save`, no `nopriv`) with capability + nonce;
-deleting uses `admin-post` with capability + nonce. Records are a private CPT `favionus_sales_rec` (not public, not queryable,
-not in search/REST/sitemaps, no rewrite). Admin screens send `X-Robots-Tag: noindex` and a robots meta tag.
+wp-admin → **Chestionar vânzări** (run) and **Fișe salvate** (saved records: view/delete). Requires `manage_options`.
+No front-end output, shortcode or REST route. Save = `admin-ajax` `wp_ajax_fsq_save` (no `nopriv`) with capability + nonce;
+delete = `admin-post` with capability + nonce. Records: private CPT `favionus_sales_rec` (not public/queryable/searchable,
+no REST, no rewrite, excluded from WP + Yoast sitemaps). Admin screens send `X-Robots-Tag: noindex` + robots meta.
 
-## Question tree – `question-tree.json`
-```json
-{
-  "schema": 1,
-  "start": "<node id>",
-  "nodes": [
-    { "id": "q_x", "type": "choice", "text_ro": "…", "text_en": "…", "help_ro": "optional hint",
-      "options": [ { "label_ro": "…", "label_en": "…", "value": "machine_value", "next": "q_y" } ],
-      "next": "default next for options without their own next (optional)" },
-    { "id": "q_y", "type": "number", "text_ro": "…", "min": 1, "max": 50, "unit": "luni", "required": true, "next": "q_z" },
-    { "id": "q_z", "type": "text", "text_ro": "…", "placeholder_ro": "…", "required": false, "next": "end_a" },
-    { "id": "end_a", "type": "end", "text_ro": "Outcome / recommendation shown on the summary" }
-  ]
-}
+## Tree – `question-tree.json` (copy of Favionus Sales `qualification_tree.json`)
 ```
-* `id`: unique, lowercase `[a-z0-9_-]`. `type`: `choice | text | number | end`.
-* Any text field `X` may be given as `X_ro` and/or `X_en`; Romanian is shown, English is the fallback.
-* `choice`: `options[].next` overrides node `next`. `text`/`number`: `next` required. `end`: shows summary.
+{ version, company, start_node,
+  nodes: [ { id, section, question, help_text,
+             type: "single" | "multi" | "input" | "summary",
+             field,                         // answer key used by offer_mapping
+             options: [ { label, value, next } ],
+             next } ],                      // input: required; multi: optional (else first ticked option's next)
+  offer_mapping: [ { if: { field: "value" | ["v1","v2"] | "*" }, scope: { key: "text" | "from field X" } } ] }
+```
+offer_mapping: all conditions must match (multi answers match if any ticked value matches). Rules apply in order,
+values per scope key accumulate, but a more specific earlier rule (superset of conditions) blocks a more general one
+for the same key. `"from field X"` = labels answered for X.
 
-The shipped tree is an **EXAMPLE**. Validate a real tree before deploying:
-`node tools/validate-tree.js /workspace/sales-form/question-tree.json`
-(errors: bad structure, duplicate/dangling ids, missing start/end; warnings: cycles, unreachable nodes, dead ends).
-To replace the tree, upload the new `question-tree.json` over the plugin's file (File Manager) – no code change needed.
+`[confirm…]` markers = unverified technical claims: highlighted in the UI with an internal note; the client copy/export
+strips them and appends “(de confirmat)”. Internal copy/JSON keeps them.
+
+Validate before replacing the tree: `node tools/validate-tree.js path/to/tree.json`. Replace by uploading a new
+`question-tree.json` over the plugin's file – no code change needed.

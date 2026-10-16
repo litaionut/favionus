@@ -31,7 +31,7 @@ Use **Post name** (`/%postname%/`). Flush permalinks after deploying the MU plug
 
 - Disable author archives if only one author (or noindex them)  
 - Keep pages + posts in the sitemap  
-- Exclude `hello-world` (delete the post) and `Uncategorized` if unused  
+- Exclude `hello-world` (delete the post). `Uncategorized` was renamed to `Wind measurement` (slug `wind-measurement`, 2026-10-16); the old URL 301s via mu-plugins/favionus-seo.php  
 
 ## 4. Delete / noindex junk
 
@@ -51,7 +51,7 @@ Use **Post name** (`/%postname%/`). Flush permalinks after deploying the MU plug
 | `privacy-policy` | Privacy Policy | (brand) |
 | `terms-of-use` | Terms of Use | (brand) |
 
-Publish three blog posts from `content/blog/`. Set category e.g. `Wind measurement` (not Uncategorized).
+Publish three blog posts from `content/blog/`. Set category `Wind measurement`.
 
 ## 6. MonsterInsights
 

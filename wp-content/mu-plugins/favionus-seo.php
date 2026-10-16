@@ -25,6 +25,7 @@ final class Favionus_SEO {
 
 	public static function init(): void {
 		add_action( 'template_redirect', array( __CLASS__, 'force_https' ), 0 );
+		add_action( 'template_redirect', array( __CLASS__, 'redirect_old_category' ), 1 );
 		add_action( 'send_headers', array( __CLASS__, 'security_headers' ) );
 		add_filter( 'wp_robots', array( __CLASS__, 'noindex_thin_content' ) );
 		add_action( 'wp_head', array( __CLASS__, 'print_og_image_fallback' ), 20 );
@@ -81,11 +82,28 @@ final class Favionus_SEO {
 				unset( $robots['index'], $robots['follow'] );
 			}
 		}
-		if ( is_category( 'uncategorized' ) ) {
-			$robots['noindex'] = true;
-			unset( $robots['index'] );
-		}
 		return $robots;
+	}
+
+	/**
+	 * 301 the old "Uncategorized" category archive (renamed to "Wind measurement",
+	 * slug wind-measurement, 2026-10-16) to the new one. Exact path match only:
+	 * /category/uncategorized/, /category/uncategorized/page/N/ and its feeds.
+	 * Paging, feed type and query string are preserved.
+	 */
+	public static function redirect_old_category(): void {
+		$uri  = isset( $_SERVER['REQUEST_URI'] ) ? wp_unslash( $_SERVER['REQUEST_URI'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$path = (string) wp_parse_url( $uri, PHP_URL_PATH );
+		if ( ! preg_match( '#^/category/uncategorized(/page/[1-9][0-9]{0,4}|/feed(?:/(?:rss2|atom|rss|rdf))?)?/?$#', $path, $m ) ) {
+			return;
+		}
+		$target = home_url( '/category/wind-measurement' . ( isset( $m[1] ) ? $m[1] : '' ) . '/' );
+		$query  = (string) wp_parse_url( $uri, PHP_URL_QUERY );
+		if ( '' !== $query ) {
+			$target .= '?' . $query;
+		}
+		wp_safe_redirect( $target, 301, 'Favionus SEO' );
+		exit;
 	}
 
 	/**

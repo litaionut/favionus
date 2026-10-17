@@ -21,9 +21,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 function doppler_lidar_hreflang_pairs() {
 	return array(
 		'/'                                 => '/ro/',
-		'/wind-lidar-measurement-campaigns/' => '/ro/campanii-masurare-vant-lidar/',
 		'/lidar-or-a-met-mast/'             => '/ro/blog/lidar-sau-turn-de-masura/',
 		'/how-turnkey-wind-lidar-campaign-works/' => '/ro/blog/cum-se-desfasoara-campanie-masurare-vant/',
+		// SEO test C1: page 89 <-> page 91. Emitted only when both are published.
+		'/wind-measurement-campaign-romania/' => '/ro/campanie-masurare-vant-romania/',
 	);
 }
 
@@ -209,6 +210,8 @@ function doppler_lidar_ro_strings() {
 		'Send enquiry' => 'Trimiteți solicitarea',
 		'Thank you. We received your enquiry and will be in touch.' => 'Vă mulțumim. Am primit solicitarea și vă vom contacta.',
 		'Făgăraș, Romania' => 'Făgăraș, România',
+		'Planning a campaign in Romania? See %s.' => 'Planificați o campanie în România? Vedeți %s.',
+		'wind measurement campaigns in Romania' => 'campaniile de măsurare a vântului în România',
 		'Contact' => 'Contact',
 		'Data Quality' => 'Calitatea datelor',
 		'How it works' => 'Cum funcționează',
@@ -350,4 +353,13 @@ function doppler_lidar_language_switcher() {
 function doppler_lidar_lang_home( $suffix = '' ) {
 	$base = doppler_lidar_is_ro() ? home_url( '/ro/' ) : home_url( '/' );
 	return $base . ltrim( $suffix, '/' );
+}
+
+/**
+ * SEO test C1: published ID of the Romania country page for the current language, or 0.
+ * EN = page 89, RO = page 91. Returns 0 until that page is published.
+ */
+function doppler_lidar_romania_page_id() {
+	$id = doppler_lidar_is_ro() ? 91 : 89;
+	return ( 'publish' === get_post_status( $id ) && 'page' === get_post_type( $id ) ) ? $id : 0;
 }

@@ -281,6 +281,20 @@ $lidar  = doppler_lidar_skin_image( 'lidar' );
 	<section id="use-cases" class="wd-section wd-section--auto wd-section--border" aria-labelledby="usecases-title">
 		<div class="wd-container">
 			<h2 id="usecases-title" class="wd-headline-lg wd-section-title"><?php esc_html_e( 'Built for onshore wind projects in Romania and Europe', 'doppler_lidar' ); ?></h2>
+			<?php
+			$doppler_lidar_ro_page = function_exists( 'doppler_lidar_romania_page_id' ) ? doppler_lidar_romania_page_id() : 0;
+			if ( $doppler_lidar_ro_page ) :
+				?>
+				<p class="wd-body wd-section-lede">
+					<?php
+					printf(
+						/* translators: %s: link to the Romania country page */
+						esc_html__( 'Planning a campaign in Romania? See %s.', 'doppler_lidar' ),
+						'<a href="' . esc_url( get_permalink( $doppler_lidar_ro_page ) ) . '">' . esc_html__( 'wind measurement campaigns in Romania', 'doppler_lidar' ) . '</a>'
+					);
+					?>
+				</p>
+			<?php endif; ?>
 			<div class="wd-cases">
 				<article class="wd-case">
 					<span class="wd-case__num" aria-hidden="true">01</span>

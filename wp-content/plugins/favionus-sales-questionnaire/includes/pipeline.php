@@ -1,16 +1,41 @@
 <?php
 /**
- * Favionus Sales – pipeline CRM (kanban). Admin-only (manage_options), private data, no public output.
- * Data model: private CPTs fsp_company, fsp_contact, fsp_deal + post meta (no custom tables, no schema migrations).
+ * Favionus Sales – pipeline CRM (kanban) v2. Admin-only (manage_options), private data, no public output.
+ * Data: private CPTs fsp_company, fsp_contact, fsp_deal (= card = one contact/lead) with post meta `_fsp_*`.
+ * Columns ("stages") are stored in option `fsp_stages`, editable in Favionus Sales → Setări pipeline.
  */
 defined( 'ABSPATH' ) || exit;
 
-function fsp_stages() {
-	return array( 'contact' => '1. Contact', 'calificare' => '2. Calificare', 'oferta' => '3. Ofertă', 'negociere' => '4. Negociere', 'inchis' => '5. Închis' );
-}
-function fsp_outcomes() { return array( '' => '—', 'castigat' => 'Câștigat', 'pierdut' => 'Pierdut' ); }
+define( 'FSP_DB', 2 );
 
-/* Field definitions: key => [label, type] (type: text|email|url|textarea|number|date|company|contacts|stage|outcome|record) */
+/* ---------- Stages ---------- */
+/* kind: backlog (imported, not contacted) | open | won | lost. Only "open" columns can be deleted (when empty). */
+function fsp_default_stages() {
+	return array(
+		array( 'key' => 'backlog',    'label' => 'Backlog',               'kind' => 'backlog', 'enabled' => 1 ),
+		array( 'key' => 'contactati', 'label' => 'Contactați (abordați)', 'kind' => 'open',    'enabled' => 1 ),
+		array( 'key' => 'raspuns',    'label' => 'Au răspuns',            'kind' => 'open',    'enabled' => 1 ),
+		array( 'key' => 'meeting',    'label' => 'Meeting avut',          'kind' => 'open',    'enabled' => 1 ),
+		array( 'key' => 'followup',   'label' => 'Follow-up',             'kind' => 'open',    'enabled' => 1 ),
+		array( 'key' => 'vandut',     'label' => 'Vândut',                'kind' => 'won',     'enabled' => 1 ),
+		array( 'key' => 'pierdut',    'label' => 'Pierdut',               'kind' => 'lost',    'enabled' => 1 ),
+	);
+}
+function fsp_stage_list( $only_enabled = false ) {
+	$s = get_option( 'fsp_stages' );
+	if ( ! is_array( $s ) || ! $s ) { $s = fsp_default_stages(); }
+	return $only_enabled ? array_values( array_filter( $s, function ( $x ) { return ! empty( $x['enabled'] ); } ) ) : $s;
+}
+/** key => label of enabled columns, in order. */
+function fsp_stages() { $o = array(); foreach ( fsp_stage_list( true ) as $x ) { $o[ $x['key'] ] = $x['label']; } return $o; }
+function fsp_stage_kind( $key ) { foreach ( fsp_stage_list() as $x ) { if ( $x['key'] === $key ) { return $x['kind']; } } return ''; }
+function fsp_stage_by_kind( $kind ) { foreach ( fsp_stage_list() as $x ) { if ( $x['kind'] === $kind ) { return $x['key']; } } return ''; }
+function fsp_first_open() { foreach ( fsp_stage_list( true ) as $x ) { if ( 'open' === $x['kind'] ) { return $x['key']; } } return fsp_stage_by_kind( 'backlog' ); }
+
+function fsp_project_types() { return array( '' => '—', 'greenfield' => 'Greenfield', 'met_mast' => 'Met mast', 'repowering' => 'Repowering', 'site_investigation' => 'Site investigation' ); }
+function fsp_lost_reasons() { return array( 'pret' => 'Preț', 'timing' => 'Timing / amânat', 'concurent' => 'A ales un concurent', 'fara_raspuns' => 'Fără răspuns', 'nu_e_nevoie' => 'Nu mai e nevoie', 'altul' => 'Altul' ); }
+
+/* Field definitions: key => [label, type, group]. */
 function fsp_fields( $type ) {
 	$f = array(
 		'fsp_company' => array(
@@ -27,27 +52,40 @@ function fsp_fields( $type ) {
 			'notes'   => array( 'Note', 'textarea' ),
 		),
 		'fsp_deal' => array(
-			'company'    => array( 'Companie', 'company' ),
-			'contacts'   => array( 'Contacte', 'contacts' ),
-			'stage'      => array( 'Etapă', 'stage' ),
-			'outcome'    => array( 'Rezultat (la Închis)', 'outcome' ),
-			'location'   => array( 'Amplasament', 'text' ),
-			'site_type'  => array( 'Tip teren / amplasament', 'text' ),
-			'height'     => array( 'Înălțime de măsurare', 'text' ),
-			'duration'   => array( 'Durata campaniei', 'text' ),
-			'start_date' => array( 'Data de început', 'date' ),
-			'units'      => array( 'Unități LiDAR', 'number' ),
-			'value_eur'  => array( 'Valoare estimată (EUR)', 'number' ),
-			'next_step'  => array( 'Următorul pas', 'text' ),
-			'next_date'  => array( 'Data următorului pas', 'date' ),
-			'record'     => array( 'Fișă chestionar legată', 'record' ),
-			'notes'      => array( 'Informații / note', 'textarea' ),
+			'contact_name' => array( 'Nume contact', 'text', 'Contact' ),
+			'company_name' => array( 'Companie', 'text', 'Contact' ),
+			'role'         => array( 'Funcție', 'text', 'Contact' ),
+			'email'        => array( 'Email', 'email', 'Contact' ),
+			'phone'        => array( 'Telefon', 'text', 'Contact' ),
+			'website'      => array( 'Website companie', 'url', 'Contact' ),
+			'project_name' => array( 'Nume proiect', 'text', 'Proiect' ),
+			'country'      => array( 'Țară', 'text', 'Proiect' ),
+			'location'     => array( 'Locație (județ / coordonate)', 'text', 'Proiect' ),
+			'mw'           => array( 'Putere (MW)', 'number', 'Proiect' ),
+			'project_type' => array( 'Tip proiect', 'ptype', 'Proiect' ),
+			'notes'        => array( 'Descriere / note', 'textarea', 'Proiect' ),
+			'stage'        => array( 'Coloană', 'stage', 'Vânzare' ),
+			'source'       => array( 'Sursă lead', 'source', 'Vânzare' ),
+			'value_eur'    => array( 'Valoare estimată ofertă (EUR)', 'number', 'Vânzare' ),
+			'next_step'    => array( 'Următorul pas', 'text', 'Vânzare' ),
+			'next_date'    => array( 'Dată follow-up', 'date', 'Vânzare' ),
+			'contacts'     => array( 'Contacte suplimentare', 'contacts', 'Legături' ),
+			'site_type'    => array( 'Tip teren', 'text', 'Detalii campanie' ),
+			'height'       => array( 'Înălțime de măsurare', 'text', 'Detalii campanie' ),
+			'duration'     => array( 'Durata campaniei', 'text', 'Detalii campanie' ),
+			'start_date'   => array( 'Data de început', 'date', 'Detalii campanie' ),
+			'units'        => array( 'Unități LiDAR', 'number', 'Detalii campanie' ),
 		),
 	);
 	return $f[ $type ];
 }
-function fsp_labels() { return array( 'fsp_company' => array( 'Companii', 'Companie' ), 'fsp_contact' => array( 'Contacte', 'Contact' ), 'fsp_deal' => array( 'Deal-uri', 'Deal' ) ); }
+function fsp_labels() { return array( 'fsp_company' => array( 'Companii', 'Companie' ), 'fsp_contact' => array( 'Contacte', 'Contact' ), 'fsp_deal' => array( 'Carduri (lead-uri)', 'Card' ) ); }
+function fsp_slug( $pt ) { return array( 'fsp_deal' => 'fsp-deals', 'fsp_company' => 'fsp-companies', 'fsp_contact' => 'fsp-contacts' )[ $pt ]; }
 function fsp_m( $id, $k ) { return get_post_meta( $id, '_fsp_' . $k, true ); }
+function fsp_title( $id ) { return $id ? fsq_title( $id ) : ''; }
+function fsp_all( $pt, $n = 2000 ) {
+	return get_posts( array( 'post_type' => $pt, 'post_status' => 'private', 'numberposts' => $n, 'orderby' => 'title', 'order' => 'ASC' ) );
+}
 
 add_action( 'init', function () {
 	foreach ( array_keys( fsp_labels() ) as $pt ) {
@@ -62,292 +100,238 @@ add_action( 'init', function () {
 add_filter( 'wp_sitemaps_post_types', function ( $t ) { foreach ( array_keys( fsp_labels() ) as $pt ) { unset( $t[ $pt ] ); } return $t; } );
 add_filter( 'wpseo_sitemap_exclude_post_type', function ( $ex, $pt ) { return isset( fsp_labels()[ $pt ] ) ? true : $ex; }, 10, 2 );
 
+/* ---------- Timeline ---------- */
+/* Entry: {t, type: stage|note|record|import|migrate, from, to, text, user} */
+function fsp_log( $id, $entry ) {
+	$log   = json_decode( (string) fsp_m( $id, 'log' ), true );
+	$log   = is_array( $log ) ? $log : array();
+	$log[] = array_merge( array( 't' => current_time( 'mysql' ), 'type' => 'note', 'from' => '', 'to' => '', 'text' => '', 'user' => wp_get_current_user()->user_login ), $entry );
+	update_post_meta( $id, '_fsp_log', wp_slash( wp_json_encode( $log, JSON_UNESCAPED_UNICODE ) ) );
+}
+function fsp_set_stage( $id, $stage, $text = '' ) {
+	$old = (string) fsp_m( $id, 'stage' );
+	if ( $old === $stage ) { if ( $text ) { fsp_log( $id, array( 'type' => 'note', 'text' => $text ) ); } return; }
+	update_post_meta( $id, '_fsp_stage', $stage );
+	fsp_log( $id, array( 'type' => 'stage', 'from' => $old, 'to' => $stage, 'text' => $text ) );
+}
+
+/* ---------- Migration from v1 stage keys (contact/calificare/oferta/negociere/inchis+outcome) ---------- */
+add_action( 'admin_init', function () {
+	if ( (int) get_option( 'fsp_db', 1 ) >= FSP_DB || ! current_user_can( FSQ_CAP ) ) { return; }
+	if ( ! get_option( 'fsp_stages' ) ) { update_option( 'fsp_stages', fsp_default_stages(), false ); }
+	$map = array( 'contact' => 'contactati', 'calificare' => 'raspuns', 'oferta' => 'followup', 'negociere' => 'followup' );
+	$deals = get_posts( array( 'post_type' => 'fsp_deal', 'post_status' => 'any', 'numberposts' => -1, 'fields' => 'ids' ) );
+	foreach ( $deals as $id ) {
+		$old = (string) fsp_m( $id, 'stage' );
+		$new = $old;
+		if ( 'inchis' === $old ) { $new = 'pierdut' === fsp_m( $id, 'outcome' ) ? 'pierdut' : 'vandut'; }
+		elseif ( isset( $map[ $old ] ) ) { $new = $map[ $old ]; }
+		elseif ( ! fsp_stage_kind( $old ) ) { $new = 'contactati'; }
+		if ( $new !== $old ) {
+			update_post_meta( $id, '_fsp_stage', $new );
+			fsp_log( $id, array( 'type' => 'migrate', 'from' => $old, 'to' => $new, 'text' => 'Migrare coloane v2', 'user' => 'system' ) );
+		}
+		$rec = absint( fsp_m( $id, 'record' ) );
+		if ( $rec ) { fsp_link_record( $id, $rec, false ); delete_post_meta( $id, '_fsp_record' ); }
+		// fill card contact fields from linked entities
+		$cid = absint( fsp_m( $id, 'company' ) );
+		$pids = array_filter( array_map( 'absint', (array) fsp_m( $id, 'contacts' ) ) );
+		if ( ! fsp_m( $id, 'company_name' ) && $cid ) { update_post_meta( $id, '_fsp_company_name', fsq_title( $cid ) ); update_post_meta( $id, '_fsp_country', fsp_m( $cid, 'country' ) ); }
+		if ( ! fsp_m( $id, 'contact_name' ) && $pids ) {
+			$p = array_shift( $pids );
+			update_post_meta( $id, '_fsp_contact', $p );
+			update_post_meta( $id, '_fsp_contacts', array_values( $pids ) );
+			update_post_meta( $id, '_fsp_contact_name', fsq_title( $p ) );
+			foreach ( array( 'role', 'email', 'phone' ) as $k ) { update_post_meta( $id, '_fsp_' . $k, fsp_m( $p, $k ) ); }
+		}
+	}
+	update_option( 'fsp_db', FSP_DB, false );
+} );
+
+/* ---------- Entity sync: card -> company + primary contact ---------- */
+function fsp_find_company( $name ) {
+	if ( '' === $name ) { return 0; }
+	foreach ( get_posts( array( 'post_type' => 'fsp_company', 'post_status' => 'private', 'title' => $name, 'numberposts' => 1, 'fields' => 'ids' ) ) as $i ) { return (int) $i; }
+	return 0;
+}
+function fsp_find_contact( $email, $name, $company_id ) {
+	if ( $email ) {
+		$r = get_posts( array( 'post_type' => 'fsp_contact', 'post_status' => 'private', 'numberposts' => 1, 'fields' => 'ids', 'meta_key' => '_fsp_email', 'meta_value' => $email ) );
+		if ( $r ) { return (int) $r[0]; }
+	}
+	if ( $name ) {
+		foreach ( get_posts( array( 'post_type' => 'fsp_contact', 'post_status' => 'private', 'title' => $name, 'numberposts' => 20, 'fields' => 'ids' ) ) as $i ) {
+			if ( absint( fsp_m( $i, 'company' ) ) === $company_id ) { return (int) $i; }
+		}
+	}
+	return 0;
+}
+function fsp_sync_entities( $deal ) {
+	$cname = (string) fsp_m( $deal, 'company_name' );
+	$cid   = fsp_find_company( $cname );
+	if ( $cname && ! $cid ) { $cid = (int) wp_insert_post( array( 'post_type' => 'fsp_company', 'post_status' => 'private', 'post_title' => $cname ) ); }
+	if ( $cid ) {
+		foreach ( array( 'country', 'website' ) as $k ) { $v = fsp_m( $deal, $k ); if ( $v && ! fsp_m( $cid, $k ) ) { update_post_meta( $cid, '_fsp_' . $k, $v ); } }
+	}
+	update_post_meta( $deal, '_fsp_company', $cid );
+	$pname = (string) fsp_m( $deal, 'contact_name' );
+	$email = (string) fsp_m( $deal, 'email' );
+	$pid   = absint( fsp_m( $deal, 'contact' ) );
+	if ( ! $pid || get_post_type( $pid ) !== 'fsp_contact' ) { $pid = fsp_find_contact( $email, $pname, $cid ); }
+	if ( ! $pid && ( $pname || $email ) ) { $pid = (int) wp_insert_post( array( 'post_type' => 'fsp_contact', 'post_status' => 'private', 'post_title' => $pname ? $pname : $email ) ); }
+	if ( $pid ) {
+		if ( $pname && fsq_title( $pid ) !== $pname ) { wp_update_post( array( 'ID' => $pid, 'post_title' => $pname ) ); }
+		foreach ( array( 'role', 'email', 'phone' ) as $k ) { update_post_meta( $pid, '_fsp_' . $k, fsp_m( $deal, $k ) ); }
+		if ( $cid ) { update_post_meta( $pid, '_fsp_company', $cid ); }
+	}
+	update_post_meta( $deal, '_fsp_contact', $pid );
+	$title = $pname ? $pname : ( $cname ? $cname : ( $email ? $email : '(fără nume)' ) );
+	if ( fsq_title( $deal ) !== $title ) { wp_update_post( array( 'ID' => $deal, 'post_title' => $title ) ); }
+}
+
+/* ---------- Questionnaire links ---------- */
+function fsp_record_ids( $deal ) { return array_values( array_filter( array_map( 'absint', (array) fsp_m( $deal, 'records' ) ) ) ); }
+function fsp_link_record( $deal, $rec, $log = true ) {
+	$ids = fsp_record_ids( $deal );
+	if ( ! in_array( $rec, $ids, true ) ) { $ids[] = $rec; update_post_meta( $deal, '_fsp_records', $ids ); }
+	update_post_meta( $rec, '_fsq_deal', $deal );
+	if ( $log ) { fsp_log( $deal, array( 'type' => 'record', 'text' => 'Fișă chestionar salvată: ' . fsq_title( $rec ), 'to' => (string) $rec ) ); }
+}
+/** Prefill data for the questionnaire when opened from a card (?deal=ID). */
+function fsp_questionnaire_prefill( $deal ) {
+	if ( ! $deal || get_post_type( $deal ) !== 'fsp_deal' || ! current_user_can( FSQ_CAP ) ) { return null; }
+	$loc = trim( implode( ', ', array_filter( array( fsp_m( $deal, 'location' ), fsp_m( $deal, 'country' ) ) ) ) );
+	return array(
+		'deal' => $deal, 'title' => fsq_title( $deal ),
+		'client' => (string) fsp_m( $deal, 'contact_name' ), 'company' => (string) fsp_m( $deal, 'company_name' ),
+		'fields' => array( 'location' => $loc ),
+	);
+}
+
+/* ---------- Board data + filters ---------- */
+function fsp_card( $d ) {
+	$id = $d->ID;
+	$recs = array();
+	foreach ( fsp_record_ids( $id ) as $r ) {
+		if ( get_post_type( $r ) !== FSQ_CPT ) { continue; }
+		$recs[] = array( 'id' => $r, 'title' => fsq_title( $r ), 'offer' => (string) get_post_meta( $r, '_fsq_offer', true ),
+			'url' => admin_url( 'admin.php?page=fsq-records&view=' . $r ) );
+	}
+	$stage = (string) fsp_m( $id, 'stage' );
+	if ( ! fsp_stage_kind( $stage ) ) { $stage = fsp_first_open(); }
+	$c = array( 'id' => $id, 'title' => fsq_title( $d ), 'stage' => $stage, 'records' => $recs, 'modified' => get_the_modified_date( 'Y-m-d', $d ) );
+	foreach ( array( 'contact_name', 'company_name', 'role', 'email', 'phone', 'website', 'project_name', 'country', 'location', 'mw', 'project_type', 'notes', 'source', 'value_eur', 'next_step', 'next_date' ) as $k ) {
+		$c[ $k ] = (string) fsp_m( $id, $k );
+	}
+	$c['value_eur'] = (float) $c['value_eur'];
+	$k = fsp_stage_kind( $stage );
+	$c['overdue'] = $c['next_date'] && $c['next_date'] < current_time( 'Y-m-d' ) && 'won' !== $k && 'lost' !== $k;
+	return $c;
+}
+function fsp_board_data() {
+	$out = array();
+	foreach ( get_posts( array( 'post_type' => 'fsp_deal', 'post_status' => 'private', 'numberposts' => 3000, 'orderby' => 'modified', 'order' => 'DESC' ) ) as $d ) { $out[] = fsp_card( $d ); }
+	return $out;
+}
+/** Same filter semantics as assets/pipeline.js (used by CSV export). */
+function fsp_filter_cards( $cards, $f ) {
+	$q = function_exists( 'mb_strtolower' ) ? mb_strtolower( (string) ( $f['q'] ?? '' ) ) : strtolower( (string) ( $f['q'] ?? '' ) );
+	return array_values( array_filter( $cards, function ( $c ) use ( $f, $q ) {
+		if ( ! empty( $f['stage'] ) && $c['stage'] !== $f['stage'] ) { return false; }
+		if ( ! empty( $f['country'] ) && $c['country'] !== $f['country'] ) { return false; }
+		if ( ! empty( $f['type'] ) && $c['project_type'] !== $f['type'] ) { return false; }
+		if ( ! empty( $f['source'] ) && $c['source'] !== $f['source'] ) { return false; }
+		if ( ! empty( $f['overdue'] ) && ! $c['overdue'] ) { return false; }
+		if ( '' !== $q ) {
+			$hay = implode( ' ', array( $c['title'], $c['contact_name'], $c['company_name'], $c['project_name'], $c['email'], $c['location'], $c['next_step'], $c['notes'] ) );
+			$hay = function_exists( 'mb_strtolower' ) ? mb_strtolower( $hay ) : strtolower( $hay );
+			if ( false === strpos( $hay, $q ) ) { return false; }
+		}
+		return true;
+	} ) );
+}
+
 /* ---------- Menu ---------- */
 add_action( 'admin_menu', function () {
 	$board = add_submenu_page( 'fsq-run', 'Pipeline vânzări', 'Pipeline', FSQ_CAP, 'fsp-board', 'fsp_render_board' );
 	$hooks = array( $board );
-	foreach ( array( 'fsp_deal' => 'fsp-deals', 'fsp_company' => 'fsp-companies', 'fsp_contact' => 'fsp-contacts' ) as $pt => $slug ) {
+	foreach ( array( 'fsp_deal', 'fsp_company', 'fsp_contact' ) as $pt ) {
+		$slug    = fsp_slug( $pt );
 		$hooks[] = add_submenu_page( 'fsq-run', fsp_labels()[ $pt ][0], fsp_labels()[ $pt ][0], FSQ_CAP, $slug, function () use ( $pt, $slug ) { fsp_render_entity( $pt, $slug ); } );
 	}
+	$hooks[] = add_submenu_page( 'fsq-run', 'Import / export CSV', 'Import / export CSV', FSQ_CAP, 'fsp-import', 'fsp_render_import' );
+	$hooks[] = add_submenu_page( 'fsq-run', 'Setări pipeline', 'Setări pipeline', FSQ_CAP, 'fsp-settings', 'fsp_render_settings' );
 	foreach ( $hooks as $h ) { add_action( 'load-' . $h, 'fsq_noindex' ); }
 	add_action( 'admin_enqueue_scripts', function ( $cur ) use ( $board, $hooks ) {
 		if ( ! in_array( $cur, $hooks, true ) ) { return; }
 		wp_enqueue_style( 'fsq', FSQ_URL . 'assets/fsq.css', array(), FSQ_VERSION );
 		if ( $cur === $board ) {
 			wp_enqueue_script( 'fsp-board', FSQ_URL . 'assets/pipeline.js', array(), FSQ_VERSION, true );
+			$kinds = array(); foreach ( fsp_stage_list( true ) as $x ) { $kinds[ $x['key'] ] = $x['kind']; }
 			wp_localize_script( 'fsp-board', 'FSP', array(
-				'ajax' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'fsp_move' ),
-				'edit' => admin_url( 'admin.php?page=fsp-deals&edit=' ), 'stages' => fsp_stages(), 'outcomes' => fsp_outcomes(),
-				'deals' => fsp_board_data(),
+				'ajax' => admin_url( 'admin-ajax.php' ), 'nonce' => wp_create_nonce( 'fsp_board' ),
+				'edit' => admin_url( 'admin.php?page=fsp-deals&edit=' ), 'quest' => admin_url( 'admin.php?page=fsq-run&deal=' ),
+				'export' => wp_nonce_url( admin_url( 'admin-post.php?action=fsp_export' ), 'fsp_export' ),
+				'stages' => fsp_stages(), 'kinds' => $kinds, 'types' => fsp_project_types(), 'reasons' => fsp_lost_reasons(),
+				'today' => current_time( 'Y-m-d' ), 'deals' => fsp_board_data(),
 			) );
 		}
 	} );
 }, 20 );
 
-function fsp_title( $id ) { return $id ? get_the_title( $id ) : ''; }
-function fsp_all( $pt ) {
-	return get_posts( array( 'post_type' => $pt, 'post_status' => 'private', 'numberposts' => 1000, 'orderby' => 'title', 'order' => 'ASC' ) );
-}
-function fsp_board_data() {
-	$out = array();
-	foreach ( get_posts( array( 'post_type' => 'fsp_deal', 'post_status' => 'private', 'numberposts' => 1000, 'orderby' => 'modified', 'order' => 'DESC' ) ) as $d ) {
-		$contacts = array_filter( array_map( 'absint', (array) fsp_m( $d->ID, 'contacts' ) ) );
-		$stage    = fsp_m( $d->ID, 'stage' );
-		$out[] = array(
-			'id' => $d->ID, 'title' => get_the_title( $d ), 'stage' => isset( fsp_stages()[ $stage ] ) ? $stage : 'contact',
-			'outcome' => (string) fsp_m( $d->ID, 'outcome' ), 'company' => fsp_title( absint( fsp_m( $d->ID, 'company' ) ) ),
-			'contact' => implode( ', ', array_map( 'fsp_title', $contacts ) ), 'value' => (float) fsp_m( $d->ID, 'value_eur' ),
-			'next_step' => (string) fsp_m( $d->ID, 'next_step' ), 'next_date' => (string) fsp_m( $d->ID, 'next_date' ),
-		);
-	}
-	return $out;
-}
-
-/* ---------- Stage log ---------- */
-function fsp_set_stage( $id, $stage, $outcome = null ) {
-	$old = fsp_m( $id, 'stage' );
-	$old_out = fsp_m( $id, 'outcome' );
-	if ( 'inchis' !== $stage ) { $outcome = ''; }
-	if ( null === $outcome ) { $outcome = $old_out; }
-	if ( $old === $stage && $old_out === $outcome ) { return; }
-	update_post_meta( $id, '_fsp_stage', $stage );
-	update_post_meta( $id, '_fsp_outcome', $outcome );
-	$log   = json_decode( (string) fsp_m( $id, 'log' ), true );
-	$log   = is_array( $log ) ? $log : array();
-	$log[] = array( 't' => current_time( 'mysql' ), 'from' => (string) $old, 'to' => $stage, 'outcome' => $outcome, 'user' => wp_get_current_user()->user_login );
-	update_post_meta( $id, '_fsp_log', wp_slash( wp_json_encode( $log, JSON_UNESCAPED_UNICODE ) ) );
-}
-
-/* ---------- AJAX: move card (logged-in admin only; no nopriv) ---------- */
-add_action( 'wp_ajax_fsp_move', function () {
+/* ---------- AJAX (logged-in admins only; no nopriv hooks) ---------- */
+function fsp_ajax_guard() {
 	if ( ! current_user_can( FSQ_CAP ) ) { wp_send_json_error( 'forbidden', 403 ); }
-	check_ajax_referer( 'fsp_move', 'nonce' );
-	$id      = absint( $_POST['id'] ?? 0 );
-	$stage   = sanitize_key( $_POST['stage'] ?? '' );
-	$outcome = sanitize_key( $_POST['outcome'] ?? '' );
-	if ( get_post_type( $id ) !== 'fsp_deal' || ! isset( fsp_stages()[ $stage ] ) || ! isset( fsp_outcomes()[ $outcome ] ) ) { wp_send_json_error( 'bad request', 400 ); }
-	fsp_set_stage( $id, $stage, $outcome );
-	wp_send_json_success( array( 'stage' => $stage, 'outcome' => fsp_m( $id, 'outcome' ) ) );
-} );
-
-/* ---------- Save / delete entities (admin-post) ---------- */
-add_action( 'admin_post_fsp_save', function () {
-	if ( ! current_user_can( FSQ_CAP ) ) { wp_die( 'Forbidden', 403 ); }
-	$pt = sanitize_key( $_POST['pt'] ?? '' );
-	if ( ! isset( fsp_labels()[ $pt ] ) ) { wp_die( 'Bad type', 400 ); }
+	check_ajax_referer( 'fsp_board', 'nonce' );
 	$id = absint( $_POST['id'] ?? 0 );
-	check_admin_referer( 'fsp_save_' . $pt . '_' . $id );
-	if ( $id && get_post_type( $id ) !== $pt ) { wp_die( 'Bad id', 400 ); }
-	$title = sanitize_text_field( wp_unslash( $_POST['title'] ?? '' ) );
-	$args  = array( 'post_type' => $pt, 'post_status' => 'private', 'post_title' => $title ? $title : '(fără nume)' );
-	if ( $id ) { $args['ID'] = $id; $id = wp_update_post( $args, true ); } else { $id = wp_insert_post( $args, true ); }
-	if ( is_wp_error( $id ) ) { wp_die( esc_html( $id->get_error_message() ) ); }
-	$in = wp_unslash( $_POST['f'] ?? array() );
-	foreach ( fsp_fields( $pt ) as $k => $def ) {
-		$v = $in[ $k ] ?? '';
-		switch ( $def[1] ) {
-			case 'stage':    continue 2; // handled below with log
-			case 'outcome':  continue 2;
-			case 'textarea': $v = sanitize_textarea_field( $v ); break;
-			case 'email':    $v = sanitize_email( $v ); break;
-			case 'url':      $v = esc_url_raw( $v ); break;
-			case 'number':   $v = '' === $v ? '' : (string) (float) str_replace( ',', '.', $v ); break;
-			case 'date':     $v = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $v ) ? $v : ''; break;
-			case 'company':
-			case 'record':   $v = absint( $v ); break;
-			case 'contacts': $v = array_values( array_filter( array_map( 'absint', (array) $v ) ) ); break;
-			default:         $v = sanitize_text_field( $v );
-		}
-		update_post_meta( $id, '_fsp_' . $k, $v );
-	}
-	if ( 'fsp_deal' === $pt ) {
-		$stage   = sanitize_key( $in['stage'] ?? 'contact' );
-		$outcome = sanitize_key( $in['outcome'] ?? '' );
-		fsp_set_stage( $id, isset( fsp_stages()[ $stage ] ) ? $stage : 'contact', isset( fsp_outcomes()[ $outcome ] ) ? $outcome : '' );
-	}
-	$slug = array( 'fsp_deal' => 'fsp-deals', 'fsp_company' => 'fsp-companies', 'fsp_contact' => 'fsp-contacts' )[ $pt ];
-	wp_safe_redirect( admin_url( 'admin.php?page=' . $slug . '&edit=' . $id . '&saved=1' ) );
-	exit;
-} );
-
-add_action( 'admin_post_fsp_delete', function () {
-	if ( ! current_user_can( FSQ_CAP ) ) { wp_die( 'Forbidden', 403 ); }
-	$id = absint( $_GET['id'] ?? 0 );
-	check_admin_referer( 'fsp_delete_' . $id );
-	$pt = get_post_type( $id );
-	if ( ! isset( fsp_labels()[ $pt ] ) ) { wp_die( 'Bad id', 400 ); }
-	wp_delete_post( $id, true );
-	$slug = array( 'fsp_deal' => 'fsp-deals', 'fsp_company' => 'fsp-companies', 'fsp_contact' => 'fsp-contacts' )[ $pt ];
-	wp_safe_redirect( admin_url( 'admin.php?page=' . $slug . '&deleted=1' ) );
-	exit;
-} );
-
-/* ---------- Create deal from questionnaire record ---------- */
-function fsp_find_or_create( $pt, $title, $meta = array() ) {
-	if ( '' === $title ) { return 0; }
-	$found = get_posts( array( 'post_type' => $pt, 'post_status' => 'private', 'title' => $title, 'numberposts' => 1, 'fields' => 'ids' ) );
-	if ( $found ) { return (int) $found[0]; }
-	$id = wp_insert_post( array( 'post_type' => $pt, 'post_status' => 'private', 'post_title' => $title ) );
-	foreach ( $meta as $k => $v ) { update_post_meta( $id, '_fsp_' . $k, $v ); }
-	return (int) $id;
+	if ( get_post_type( $id ) !== 'fsp_deal' ) { wp_send_json_error( 'bad id', 400 ); }
+	return $id;
 }
-add_action( 'admin_post_fsp_from_record', function () {
-	if ( ! current_user_can( FSQ_CAP ) ) { wp_die( 'Forbidden', 403 ); }
-	$rid = absint( $_GET['record'] ?? 0 );
-	check_admin_referer( 'fsp_from_record_' . $rid );
-	if ( get_post_type( $rid ) !== FSQ_CPT ) { wp_die( 'Bad record', 400 ); }
-	$ans = array();
-	foreach ( (array) json_decode( (string) get_post_meta( $rid, '_fsq_answers', true ), true ) as $a ) {
-		if ( ! empty( $a['field'] ) && isset( $a['answer'] ) && '—' !== $a['answer'] ) { $ans[ $a['field'] ] = $a['answer']; }
+add_action( 'wp_ajax_fsp_move', function () {
+	$id    = fsp_ajax_guard();
+	$stage = sanitize_key( $_POST['stage'] ?? '' );
+	if ( ! isset( fsp_stages()[ $stage ] ) ) { wp_send_json_error( 'bad stage', 400 ); }
+	$kind = fsp_stage_kind( $stage );
+	$note = sanitize_textarea_field( wp_unslash( $_POST['note'] ?? '' ) );
+	if ( 'won' === $kind && isset( $_POST['value'] ) && '' !== $_POST['value'] ) {
+		update_post_meta( $id, '_fsp_value_eur', (string) (float) str_replace( ',', '.', wp_unslash( $_POST['value'] ) ) );
+		$note = trim( 'Valoare finală: ' . fsp_m( $id, 'value_eur' ) . ' EUR. ' . $note );
 	}
-	$company = sanitize_text_field( get_post_meta( $rid, '_fsq_company', true ) );
-	$client  = sanitize_text_field( get_post_meta( $rid, '_fsq_client', true ) );
-	$cid     = fsp_find_or_create( 'fsp_company', $company );
-	$pid     = fsp_find_or_create( 'fsp_contact', $client, $cid ? array( 'company' => $cid ) : array() );
-	$deal    = wp_insert_post( array( 'post_type' => 'fsp_deal', 'post_status' => 'private',
-		'post_title' => trim( ( $company ? $company : 'Deal nou' ) . ( isset( $ans['location'] ) ? ' – ' . $ans['location'] : '' ) ) ) );
-	$units = isset( $ans['num_sites'] ) ? (string) (int) $ans['num_sites'] : '';
-	$map = array(
-		'company' => $cid, 'contacts' => $pid ? array( $pid ) : array(), 'record' => $rid,
-		'location' => $ans['location'] ?? '', 'site_type' => $ans['terrain'] ?? '', 'height' => $ans['max_height'] ?? ( $ans['hub_height'] ?? '' ),
-		'duration' => $ans['duration'] ?? '', 'units' => '0' === $units ? '' : $units,
-		'next_step' => $ans['next_step'] ?? '',
-		'notes' => trim( "Creat din fișa chestionar #{$rid}.\n" . ( isset( $ans['start'] ) ? 'Start dorit: ' . $ans['start'] . "\n" : '' ) . ( isset( $ans['budget'] ) ? 'Buget: ' . $ans['budget'] . "\n" : '' ) . get_post_meta( $rid, '_fsq_notes', true ) ),
-	);
-	foreach ( $map as $k => $v ) { update_post_meta( $deal, '_fsp_' . $k, is_array( $v ) ? $v : sanitize_textarea_field( (string) $v ) ); }
-	fsp_set_stage( $deal, 'calificare', '' );
-	wp_safe_redirect( admin_url( 'admin.php?page=fsp-deals&edit=' . $deal . '&fromrecord=1' ) );
-	exit;
+	if ( 'lost' === $kind ) {
+		$r = sanitize_key( $_POST['reason'] ?? '' );
+		$reasons = fsp_lost_reasons();
+		if ( isset( $reasons[ $r ] ) ) { update_post_meta( $id, '_fsp_lost_reason', $r ); $note = trim( 'Motiv: ' . $reasons[ $r ] . '. ' . $note ); }
+	}
+	fsp_set_stage( $id, $stage, $note );
+	wp_send_json_success( fsp_card( get_post( $id ) ) );
 } );
-
-/* Shown on the questionnaire record view (called from the main plugin file). */
-function fsp_record_actions( $rid ) {
-	$url = wp_nonce_url( admin_url( 'admin-post.php?action=fsp_from_record&record=' . $rid ), 'fsp_from_record_' . $rid );
-	echo '<p><a class="button button-primary" href="' . esc_url( $url ) . '">Creează deal din fișă</a>';
-	$linked = get_posts( array( 'post_type' => 'fsp_deal', 'post_status' => 'private', 'numberposts' => 20, 'meta_key' => '_fsp_record', 'meta_value' => $rid ) );
-	foreach ( $linked as $d ) {
-		echo ' <a class="button" href="' . esc_url( admin_url( 'admin.php?page=fsp-deals&edit=' . $d->ID ) ) . '">Deal: ' . esc_html( get_the_title( $d ) ) . '</a>';
-	}
-	echo '</p>';
-}
+add_action( 'wp_ajax_fsp_note', function () {
+	$id   = fsp_ajax_guard();
+	$text = sanitize_textarea_field( wp_unslash( $_POST['text'] ?? '' ) );
+	if ( '' === $text ) { wp_send_json_error( 'empty', 400 ); }
+	fsp_log( $id, array( 'type' => 'note', 'text' => $text ) );
+	wp_update_post( array( 'ID' => $id ) ); // bump modified
+	wp_send_json_success( fsp_card( get_post( $id ) ) );
+} );
+add_action( 'wp_ajax_fsp_timeline', function () {
+	$id  = fsp_ajax_guard();
+	$log = json_decode( (string) fsp_m( $id, 'log' ), true );
+	wp_send_json_success( array_reverse( is_array( $log ) ? array_slice( $log, -50 ) : array() ) );
+} );
 
 /* ---------- Board screen ---------- */
 function fsp_render_board() {
 	if ( ! current_user_can( FSQ_CAP ) ) { return; }
 	echo '<div class="wrap fsp-wrap"><h1 class="wp-heading-inline">Pipeline vânzări</h1> ';
-	echo '<a class="page-title-action" href="' . esc_url( admin_url( 'admin.php?page=fsp-deals&edit=new' ) ) . '">Deal nou</a> ';
-	echo '<a class="page-title-action" href="' . esc_url( admin_url( 'admin.php?page=fsp-companies&edit=new' ) ) . '">Companie nouă</a> ';
-	echo '<a class="page-title-action" href="' . esc_url( admin_url( 'admin.php?page=fsp-contacts&edit=new' ) ) . '">Contact nou</a>';
-	echo '<p><input type="search" id="fsp-search" class="regular-text" placeholder="Caută (titlu, companie, contact, pas următor)…"> ';
-	echo '<label><input type="checkbox" id="fsp-hide-lost"> Ascunde pierdute</label></p>';
-	echo '<div id="fsp-board" class="fsp-board"><p>Se încarcă…</p></div></div>';
+	echo '<a class="page-title-action" href="' . esc_url( admin_url( 'admin.php?page=fsp-deals&edit=new' ) ) . '">Card nou</a> ';
+	echo '<a class="page-title-action" href="' . esc_url( admin_url( 'admin.php?page=fsp-import' ) ) . '">Import CSV</a> ';
+	echo '<a class="page-title-action" id="fsp-export" href="#">Export CSV (filtrul curent)</a> ';
+	echo '<a class="page-title-action" href="' . esc_url( admin_url( 'admin.php?page=fsp-settings' ) ) . '">Setări coloane</a>';
+	$msgs = get_transient( 'fsp_msg_' . get_current_user_id() );
+	if ( $msgs ) { delete_transient( 'fsp_msg_' . get_current_user_id() ); foreach ( (array) $msgs as $m ) { echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $m ) . '</p></div>'; } }
+	echo '<div id="fsp-filters" class="fsp-filters"></div>';
+	echo '<div id="fsp-board" class="fsp-board"><p>Se încarcă…</p></div><div id="fsp-modal-root"></div></div>';
 }
 
-/* ---------- Generic list + edit screens ---------- */
-function fsp_render_entity( $pt, $slug ) {
-	if ( ! current_user_can( FSQ_CAP ) ) { return; }
-	list( $plural, $single ) = fsp_labels()[ $pt ];
-	$base = admin_url( 'admin.php?page=' . $slug );
-	echo '<div class="wrap fsp-wrap">';
-	$edit = $_GET['edit'] ?? '';
-	if ( '' !== $edit ) {
-		$id = 'new' === $edit ? 0 : absint( $edit );
-		if ( $id && get_post_type( $id ) !== $pt ) { echo '<p>Nu există.</p></div>'; return; }
-		fsp_render_form( $pt, $id, $single, $base );
-		echo '</div>';
-		return;
-	}
-	echo '<h1 class="wp-heading-inline">' . esc_html( $plural ) . '</h1> <a class="page-title-action" href="' . esc_url( $base . '&edit=new' ) . '">Adaugă</a>';
-	if ( 'fsp_deal' === $pt ) { echo ' <a class="page-title-action" href="' . esc_url( admin_url( 'admin.php?page=fsp-board' ) ) . '">Vezi pipeline</a>'; }
-	if ( isset( $_GET['deleted'] ) ) { echo '<div class="notice notice-success"><p>Șters.</p></div>'; }
-	$items = fsp_all( $pt );
-	if ( ! $items ) { echo '<p>Nimic încă.</p></div>'; return; }
-	$cols = array( 'fsp_company' => array( 'vat', 'country' ), 'fsp_contact' => array( 'company', 'email', 'phone' ), 'fsp_deal' => array( 'company', 'stage', 'value_eur', 'next_step' ) )[ $pt ];
-	$defs = fsp_fields( $pt );
-	echo '<table class="widefat striped"><thead><tr><th>Nume</th>';
-	foreach ( $cols as $c ) { echo '<th>' . esc_html( $defs[ $c ][0] ) . '</th>'; }
-	echo '<th>Acțiuni</th></tr></thead><tbody>';
-	foreach ( $items as $p ) {
-		echo '<tr><td><a href="' . esc_url( $base . '&edit=' . $p->ID ) . '"><strong>' . esc_html( get_the_title( $p ) ) . '</strong></a></td>';
-		foreach ( $cols as $c ) { echo '<td>' . esc_html( fsp_display( $p->ID, $c, $defs[ $c ][1] ) ) . '</td>'; }
-		$del = wp_nonce_url( admin_url( 'admin-post.php?action=fsp_delete&id=' . $p->ID ), 'fsp_delete_' . $p->ID );
-		echo '<td><a href="' . esc_url( $base . '&edit=' . $p->ID ) . '">Editează</a> | <a href="' . esc_url( $del ) . '" onclick="return confirm(\'Ștergi definitiv?\');">Șterge</a></td></tr>';
-	}
-	echo '</tbody></table></div>';
-}
-
-function fsp_display( $id, $k, $type ) {
-	$v = fsp_m( $id, $k );
-	if ( 'company' === $type ) { return fsp_title( absint( $v ) ); }
-	if ( 'stage' === $type ) { $s = fsp_stages(); $o = fsp_outcomes(); $out = fsp_m( $id, 'outcome' ); return ( $s[ $v ] ?? $s['contact'] ) . ( $out ? ' – ' . $o[ $out ] : '' ); }
-	if ( 'number' === $type && '' !== $v && 'value_eur' === $k ) { return number_format_i18n( (float) $v ) . ' EUR'; }
-	return is_array( $v ) ? '' : (string) $v;
-}
-
-function fsp_render_form( $pt, $id, $single, $base ) {
-	echo '<h1>' . esc_html( $id ? $single . ': ' . get_the_title( $id ) : $single . ' nou' ) . '</h1>';
-	echo '<p><a href="' . esc_url( 'fsp_deal' === $pt ? admin_url( 'admin.php?page=fsp-board' ) : $base ) . '">&larr; Înapoi</a></p>';
-	if ( isset( $_GET['saved'] ) ) { echo '<div class="notice notice-success"><p>Salvat.</p></div>'; }
-	if ( isset( $_GET['fromrecord'] ) ) { echo '<div class="notice notice-info"><p>Deal creat din fișa chestionarului. Verifică și completează câmpurile, apoi salvează.</p></div>'; }
-	echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
-	wp_nonce_field( 'fsp_save_' . $pt . '_' . $id );
-	echo '<input type="hidden" name="action" value="fsp_save"><input type="hidden" name="pt" value="' . esc_attr( $pt ) . '"><input type="hidden" name="id" value="' . esc_attr( $id ) . '">';
-	echo '<table class="form-table"><tr><th><label for="fsp-title">' . ( 'fsp_deal' === $pt ? 'Titlu deal / proiect' : 'Nume' ) . '</label></th><td><input required id="fsp-title" name="title" class="regular-text" value="' . esc_attr( $id ? get_the_title( $id ) : '' ) . '"></td></tr>';
-	foreach ( fsp_fields( $pt ) as $k => $def ) {
-		$v    = $id ? fsp_m( $id, $k ) : ( 'stage' === $def[1] ? 'contact' : '' );
-		$name = 'f[' . $k . ']';
-		echo '<tr><th><label>' . esc_html( $def[0] ) . '</label></th><td>';
-		switch ( $def[1] ) {
-			case 'textarea': echo '<textarea name="' . esc_attr( $name ) . '" rows="5" class="large-text">' . esc_textarea( $v ) . '</textarea>'; break;
-			case 'stage':
-			case 'outcome':
-				echo '<select name="' . esc_attr( $name ) . '">';
-				foreach ( ( 'stage' === $def[1] ? fsp_stages() : fsp_outcomes() ) as $sk => $sl ) { echo '<option value="' . esc_attr( $sk ) . '"' . selected( $v, $sk, false ) . '>' . esc_html( $sl ) . '</option>'; }
-				echo '</select>'; break;
-			case 'company':
-			case 'record':
-				$opts = 'company' === $def[1] ? fsp_all( 'fsp_company' ) : get_posts( array( 'post_type' => FSQ_CPT, 'post_status' => 'private', 'numberposts' => 200 ) );
-				echo '<select name="' . esc_attr( $name ) . '"><option value="0">—</option>';
-				foreach ( $opts as $o ) { echo '<option value="' . esc_attr( $o->ID ) . '"' . selected( absint( $v ), $o->ID, false ) . '>' . esc_html( get_the_title( $o ) ) . '</option>'; }
-				echo '</select>';
-				if ( 'record' === $def[1] && $v ) { echo ' <a href="' . esc_url( admin_url( 'admin.php?page=fsq-records&view=' . absint( $v ) ) ) . '">Deschide fișa</a>'; }
-				break;
-			case 'contacts':
-				$sel = array_map( 'absint', (array) $v );
-				echo '<select name="' . esc_attr( $name ) . '[]" multiple size="5" style="min-width:300px">';
-				foreach ( fsp_all( 'fsp_contact' ) as $o ) {
-					$co = fsp_title( absint( fsp_m( $o->ID, 'company' ) ) );
-					echo '<option value="' . esc_attr( $o->ID ) . '"' . ( in_array( $o->ID, $sel, true ) ? ' selected' : '' ) . '>' . esc_html( get_the_title( $o ) . ( $co ? ' (' . $co . ')' : '' ) ) . '</option>';
-				}
-				echo '</select><p class="description">Ctrl/Cmd + click pentru mai multe.</p>'; break;
-			default:
-				$t = array( 'email' => 'email', 'url' => 'url', 'number' => 'number', 'date' => 'date' )[ $def[1] ] ?? 'text';
-				echo '<input type="' . esc_attr( $t ) . '"' . ( 'number' === $t ? ' step="any"' : '' ) . ' name="' . esc_attr( $name ) . '" class="regular-text" value="' . esc_attr( is_array( $v ) ? '' : $v ) . '">';
-		}
-		echo '</td></tr>';
-	}
-	echo '</table>';
-	submit_button( 'Salvează' );
-	echo '</form>';
-	if ( 'fsp_deal' === $pt && $id ) {
-		$log = json_decode( (string) fsp_m( $id, 'log' ), true );
-		echo '<h2>Istoric etape</h2>';
-		if ( ! $log ) { echo '<p>—</p>'; } else {
-			$s = fsp_stages(); $o = fsp_outcomes();
-			echo '<table class="widefat striped"><thead><tr><th>Data</th><th>Din</th><th>În</th><th>Utilizator</th></tr></thead><tbody>';
-			foreach ( array_reverse( $log ) as $e ) {
-				echo '<tr><td>' . esc_html( $e['t'] ?? '' ) . '</td><td>' . esc_html( $s[ $e['from'] ?? '' ] ?? '—' ) . '</td><td>' . esc_html( ( $s[ $e['to'] ?? '' ] ?? '' ) . ( ! empty( $e['outcome'] ) ? ' – ' . ( $o[ $e['outcome'] ] ?? '' ) : '' ) ) . '</td><td>' . esc_html( $e['user'] ?? '' ) . '</td></tr>';
-			}
-			echo '</tbody></table>';
-		}
-	}
-	if ( 'fsp_company' === $pt && $id ) {
-		echo '<h2>Contacte și deal-uri</h2><ul>';
-		foreach ( array( 'fsp_contact' => 'fsp-contacts', 'fsp_deal' => 'fsp-deals' ) as $rpt => $rslug ) {
-			foreach ( get_posts( array( 'post_type' => $rpt, 'post_status' => 'private', 'numberposts' => 100, 'meta_key' => '_fsp_company', 'meta_value' => $id ) ) as $r ) {
-				echo '<li>' . esc_html( fsp_labels()[ $rpt ][1] ) . ': <a href="' . esc_url( admin_url( 'admin.php?page=' . $rslug . '&edit=' . $r->ID ) ) . '">' . esc_html( get_the_title( $r ) ) . '</a></li>';
-			}
-		}
-		echo '</ul>';
-	}
-}
+require_once __DIR__ . '/pipeline-admin.php';
+require_once __DIR__ . '/pipeline-csv.php';

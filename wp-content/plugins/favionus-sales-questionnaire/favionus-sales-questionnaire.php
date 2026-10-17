@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Favionus Sales
  * Description: Chestionar de vânzări ghidat + pipeline CRM (kanban), doar pentru administratori (wp-admin). Nu are nicio ieșire publică.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Author: Favionus
  * Requires PHP: 7.4
  * License: Proprietary
@@ -10,11 +10,17 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'FSQ_VERSION', '0.2.0' );
+define( 'FSQ_VERSION', '0.3.0' );
 define( 'FSQ_DIR', plugin_dir_path( __FILE__ ) );
 define( 'FSQ_URL', plugin_dir_url( __FILE__ ) );
 define( 'FSQ_CPT', 'favionus_sales_rec' );
 define( 'FSQ_CAP', 'manage_options' );
+
+/** Raw title (get_the_title() would prefix private posts with "Private:"). */
+function fsq_title( $post ) {
+	$t = get_post_field( 'post_title', $post, 'raw' );
+	return is_string( $t ) ? $t : '';
+}
 
 /* ---------- Private record type ---------- */
 add_action( 'init', function () {
@@ -60,6 +66,7 @@ add_action( 'admin_menu', function () {
 				'ajax'  => admin_url( 'admin-ajax.php' ),
 				'nonce' => wp_create_nonce( 'fsq_save' ),
 				'tree'  => fsq_load_tree(),
+				'prefill' => function_exists( 'fsp_questionnaire_prefill' ) ? fsp_questionnaire_prefill( absint( $_GET['deal'] ?? 0 ) ) : null,
 				'lang'  => 'ro', // Romanian UI; nodes fall back to text_en when text_ro is missing.,
 			) );
 		}
@@ -124,7 +131,11 @@ add_action( 'wp_ajax_fsq_save', function () {
 	update_post_meta( $id, '_fsq_notes', $notes );
 	update_post_meta( $id, '_fsq_offer', $offer );
 	update_post_meta( $id, '_fsq_answers', wp_slash( wp_json_encode( $answers, JSON_UNESCAPED_UNICODE ) ) );
-	wp_send_json_success( array( 'id' => $id, 'url' => admin_url( 'admin.php?page=fsq-records&view=' . $id ) ) );
+	$deal = absint( $_POST['deal'] ?? 0 );
+	if ( $deal && function_exists( 'fsp_link_record' ) && get_post_type( $deal ) === 'fsp_deal' ) {
+		fsp_link_record( $deal, $id );
+	}
+	wp_send_json_success( array( 'id' => $id, 'url' => admin_url( 'admin.php?page=fsq-records&view=' . $id ), 'deal_url' => $deal ? admin_url( 'admin.php?page=fsp-deals&edit=' . $deal ) : '' ) );
 } );
 
 /* ---------- Delete (admin-post) ---------- */
@@ -155,7 +166,7 @@ function fsq_render_records() {
 	if ( $view && get_post_type( $view ) === FSQ_CPT ) {
 		$p       = get_post( $view );
 		$answers = json_decode( (string) get_post_meta( $view, '_fsq_answers', true ), true );
-		echo '<h1>' . esc_html( get_the_title( $p ) ) . '</h1>';
+		echo '<h1>' . esc_html( fsq_title( $p ) ) . '</h1>';
 		echo '<p><a href="' . esc_url( admin_url( 'admin.php?page=fsq-records' ) ) . '">&larr; Înapoi la listă</a></p>';
 		if ( function_exists( 'fsp_record_actions' ) ) { fsp_record_actions( $view ); }
 		echo '<table class="widefat striped"><tbody>';
@@ -177,7 +188,7 @@ function fsq_render_records() {
 	echo '<table class="widefat striped"><thead><tr><th>Fișă</th><th>Data</th><th>Acțiuni</th></tr></thead><tbody>';
 	foreach ( $q as $p ) {
 		$del = wp_nonce_url( admin_url( 'admin-post.php?action=fsq_delete&id=' . $p->ID ), 'fsq_delete_' . $p->ID );
-		echo '<tr><td>' . esc_html( get_the_title( $p ) ) . '</td><td>' . esc_html( get_the_date( 'Y-m-d H:i', $p ) ) . '</td><td>'
+		echo '<tr><td>' . esc_html( fsq_title( $p ) ) . '</td><td>' . esc_html( get_the_date( 'Y-m-d H:i', $p ) ) . '</td><td>'
 			. '<a href="' . esc_url( admin_url( 'admin.php?page=fsq-records&view=' . $p->ID ) ) . '">Vezi</a> | '
 			. '<a href="' . esc_url( $del ) . '" onclick="return confirm(\'Ștergi definitiv fișa?\');">Șterge</a></td></tr>';
 	}

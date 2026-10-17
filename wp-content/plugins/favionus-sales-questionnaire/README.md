@@ -25,14 +25,36 @@ strips them and appends “(de confirmat)”. Internal copy/JSON keeps them.
 Validate before replacing the tree: `node tools/validate-tree.js path/to/tree.json`. Replace by uploading a new
 `question-tree.json` over the plugin's file – no code change needed.
 
-# Pipeline CRM (kanban) – since 0.2.0
-Menu **Favionus Sales → Pipeline / Deal-uri / Companii / Contacte**. Same rules: `manage_options` + nonces, no public output.
-Data: private CPTs `fsp_company` (name, vat, country, website, notes), `fsp_contact` (name, role, email, phone, company, notes),
-`fsp_deal` (title, company, contacts[], stage, outcome, location, site_type, height, duration, start_date, units, value_eur,
-next_step, next_date, record, notes, log). Meta keys are prefixed `_fsp_`. Stage changes (board or form) append
-`{t, from, to, outcome, user}` to `_fsp_log`.
-Stages: contact, calificare, oferta, negociere, inchis (+ outcome castigat|pierdut).
-Board: drag & drop (admin-ajax `fsp_move`), fallback dropdown on each card, search, “hide lost”, column count + EUR total
-(lost deals excluded from total), overdue next-step date in red. Click a card to edit.
-Questionnaire record → **Creează deal din fișă**: finds/creates the company and contact by name, prefills location, terrain,
-height, duration, units (num_sites), next step, notes (start, budget, meeting notes), links the record, stage = Calificare.
+# Pipeline CRM (kanban) – v0.3.0
+Menu **Favionus Sales → Pipeline / Carduri / Companii / Contacte / Import-export CSV / Setări pipeline**.
+Same rules: `manage_options` + nonce on every handler, admin-ajax (`fsp_move`, `fsp_note`, `fsp_timeline`; no `nopriv`) and
+admin-post only, no REST/shortcode/front-end, private CPTs excluded from sitemaps, noindex on all screens.
+
+## Columns (option `fsp_stages`)
+Ordered list of `{key, label, kind, enabled}`; kind = `backlog` | `open` | `won` | `lost`.
+Defaults: Backlog, Contactați (abordați), Au răspuns, Meeting avut, Follow-up, Vândut, Pierdut (toggle).
+Settings screen: rename, reorder, add (kind open), delete only if empty and kind open; system columns can't be deleted;
+Pierdut can be hidden only when empty. Moving into a won/lost column opens a modal (final value / loss reason + note).
+Migration (runs once, option `fsp_db` = 2): contact→contactati, calificare→raspuns, oferta/negociere→followup,
+inchis+pierdut→pierdut, inchis(+castigat)→vandut, unknown→contactati; v1 `_fsp_record` → `_fsp_records[]`; card contact
+fields filled from linked company/contact. Each change is logged in the timeline as "Migrare coloane v2".
+
+## Card (`fsp_deal`) = one contact / lead
+Meta `_fsp_*`: contact_name, company_name, role, email, phone, website, project_name, country, location, mw,
+project_type (greenfield|met_mast|repowering|site_investigation), notes, stage, source, value_eur, next_step, next_date,
+contacts[] (extra), site_type, height, duration, start_date, units, records[] (questionnaire record ids), lost_reason,
+log (timeline JSON: {t, type: stage|note|record|import|migrate, from, to, text, user}).
+On save the card finds/creates the company (`_fsp_company`) by name and the primary contact (`_fsp_contact`) by
+email or name+company, and copies role/email/phone to it. Card title = contact name (else company).
+
+## Questionnaire ↔ card
+"Pornește chestionarul" → `fsq-run&deal=ID`: client/company/location prefilled, banner shows the card; saving the record
+links it (`_fsp_records` on the card, `_fsq_deal` on the record) and logs it. The card shows linked records with the
+client offer-scope lines. A record without a card has "Creează card din fișă".
+
+## CSV
+Import: upload (.csv/.txt, ≤2 MB, finfo mime text/csv|text/plain…, ≤5000 rows, delimiter auto , ; tab, BOM, cp1250
+fallback) → mapping with auto-match by header synonyms → options (target Backlog / any open column, dedupe by email
+else company+name against existing cards and within the file, unmapped columns → notes, default source/country) →
+preview with per-row status/warnings → import. Export: current board filter; cells starting with = + - @ tab CR are
+prefixed with `'` (so phone numbers like +40… are exported as '+40…).

@@ -16,7 +16,8 @@
 
   var history = [];            // stack of {id, section, question, field, answer(label text), value(string|array)}
   var current = tree.start_node;
-  var meta = { client: '', company: '', notes: '' };
+  var pre = cfg.prefill || null;  // set when started from a pipeline card (?deal=ID)
+  var meta = { client: pre ? pre.client || '' : '', company: pre ? pre.company || '' : '', notes: '' };
 
   function el(tag, attrs, children) {
     var e = document.createElement(tag);
@@ -114,6 +115,7 @@
       } } }));
     } else {            // input
       var input = el('textarea', { 'class': 'large-text', rows: '3' });
+      if (pre && pre.fields && pre.fields[n.field]) input.value = pre.fields[n.field];
       var submit = function () { var v = input.value.trim(); go(n.next, v || '—', v); };
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); submit(); } });
       card.appendChild(el('p', {}, [input]));
@@ -244,8 +246,10 @@
         fd.append('action', 'fsq_save'); fd.append('nonce', cfg.nonce);
         fd.append('client', meta.client); fd.append('company', meta.company); fd.append('notes', meta.notes);
         fd.append('summary', internalText(scope)); fd.append('offer', clientText(scope)); fd.append('answers', JSON.stringify(rows));
+        if (pre && pre.deal) fd.append('deal', pre.deal);
         fetch(cfg.ajax, { method: 'POST', body: fd, credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (r) {
-          if (r && r.success) { status.textContent = 'Salvat. '; status.appendChild(el('a', { href: r.data.url, text: 'Deschide fișa' })); }
+          if (r && r.success) { status.textContent = 'Salvat. '; status.appendChild(el('a', { href: r.data.url, text: 'Deschide fișa' }));
+            if (r.data.deal_url) { status.appendChild(document.createTextNode(' · ')); status.appendChild(el('a', { href: r.data.deal_url, text: 'Înapoi la card' })); } }
           else { status.textContent = 'Eroare la salvare.'; btn.disabled = false; }
         }).catch(function () { status.textContent = 'Eroare de rețea.'; btn.disabled = false; });
       } } }),
@@ -262,6 +266,10 @@
     app.appendChild(navBar());
   }
 
+  if (pre && pre.deal) {
+    var banner = el('div', { 'class': 'notice notice-info fsq-linked' }, [el('p', { text: 'Legat de cardul: ' + (pre.title || ('#' + pre.deal)) + ' – fișa salvată se atașează automat cardului.' })]);
+    app.parentNode.insertBefore(banner, app);
+  }
   if (!tree.start_node || !nodes[tree.start_node]) { app.textContent = 'Arborele de întrebări nu are un nod de start valid.'; return; }
   render();
 })();

@@ -1,0 +1,1102 @@
+{
+  "version": "1.0",
+  "company": "Favionus S.R.L.",
+  "start_node": "open",
+  "nodes": [
+    {
+      "id": "open",
+      "section": "Opening",
+      "question": "Do you have 10 minutes to see if a LiDAR campaign makes sense for your project?",
+      "help_text": "Short intro: Favionus = turnkey LiDAR campaigns (equipment, install, monitoring, validated data, reporting).",
+      "type": "single",
+      "field": "meeting_ok",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "yes",
+          "next": "stage"
+        },
+        {
+          "label": "Not now",
+          "value": "later",
+          "next": "fu_date"
+        },
+        {
+          "label": "Not relevant",
+          "value": "no",
+          "next": "end_polite"
+        }
+      ]
+    },
+    {
+      "id": "fu_date",
+      "section": "Opening",
+      "question": "When is a good moment to come back?",
+      "help_text": "Log date in CRM.",
+      "type": "input",
+      "field": "followup_date",
+      "options": [],
+      "next": "summary"
+    },
+    {
+      "id": "end_polite",
+      "section": "Opening",
+      "question": "Can I send a short brochure for when you reach the measurement stage?",
+      "help_text": "Polite exit; still capture contact.",
+      "type": "single",
+      "field": "brochure",
+      "options": [
+        {
+          "label": "Yes, send it",
+          "value": "yes",
+          "next": "summary"
+        },
+        {
+          "label": "No",
+          "value": "no",
+          "next": "summary"
+        }
+      ]
+    },
+    {
+      "id": "stage",
+      "section": "Situation",
+      "question": "What stage is the project at?",
+      "help_text": "Earlier stage = longer runway, plan 12+ months before financing.",
+      "type": "single",
+      "field": "project_stage",
+      "options": [
+        {
+          "label": "Prospecting / land securing",
+          "value": "prospecting",
+          "next": "type"
+        },
+        {
+          "label": "Grid connection (ATR) / PUZ in progress",
+          "value": "permitting",
+          "next": "type"
+        },
+        {
+          "label": "Close to financing / sale",
+          "value": "financing",
+          "next": "type"
+        },
+        {
+          "label": "Operating park",
+          "value": "operating",
+          "next": "type"
+        }
+      ]
+    },
+    {
+      "id": "type",
+      "section": "Situation",
+      "question": "What type of measurement do you need?",
+      "help_text": "Drives scope template.",
+      "type": "single",
+      "field": "project_type",
+      "options": [
+        {
+          "label": "Greenfield, no wind data",
+          "value": "greenfield",
+          "next": "data_now"
+        },
+        {
+          "label": "Complement an existing met mast",
+          "value": "mast_complement",
+          "next": "mast_info"
+        },
+        {
+          "label": "Repowering / operating park",
+          "value": "repowering",
+          "next": "repower_info"
+        },
+        {
+          "label": "Site investigation / prefeasibility",
+          "value": "site_investigation",
+          "next": "data_now"
+        }
+      ]
+    },
+    {
+      "id": "mast_info",
+      "section": "Situation",
+      "question": "Mast height, distance to planned turbines, and how long has it measured?",
+      "help_text": "Mast far / lower than hub = vertical/horizontal extrapolation uncertainty. LiDAR can be verified against it.",
+      "type": "multi",
+      "field": "mast_details",
+      "options": [
+        {
+          "label": "Mast lower than hub height",
+          "value": "low",
+          "next": "p_extrap"
+        },
+        {
+          "label": "Mast > 2 km or different terrain",
+          "value": "far",
+          "next": "p_extrap"
+        },
+        {
+          "label": "Representative, < 12 months data",
+          "value": "short",
+          "next": "p_extrap"
+        },
+        {
+          "label": "Mast data available for sharing",
+          "value": "shareable",
+          "next": "p_extrap"
+        }
+      ]
+    },
+    {
+      "id": "repower_info",
+      "section": "Situation",
+      "question": "How many turbines today, and what new hub height is planned?",
+      "help_text": "Repowering usually raises hub height to 120-170 m; SCADA data from old turbines does not cover new heights.",
+      "type": "input",
+      "field": "repower_details",
+      "options": [],
+      "next": "p_extrap"
+    },
+    {
+      "id": "data_now",
+      "section": "Situation",
+      "question": "What wind data do you rely on today?",
+      "help_text": "",
+      "type": "single",
+      "field": "existing_data",
+      "options": [
+        {
+          "label": "Reanalysis / satellite (ERA5, Global Wind Atlas)",
+          "value": "modelled",
+          "next": "p_uncert"
+        },
+        {
+          "label": "Nearby mast / other project",
+          "value": "nearby",
+          "next": "p_extrap"
+        },
+        {
+          "label": "Nothing yet",
+          "value": "none",
+          "next": "p_uncert"
+        },
+        {
+          "label": "Campaign planned but not started",
+          "value": "planned",
+          "next": "p_blocker"
+        }
+      ]
+    },
+    {
+      "id": "p_uncert",
+      "section": "Problem",
+      "question": "How confident are you in the AEP estimate from modelled data only?",
+      "help_text": "SPIN Problem question.",
+      "type": "single",
+      "field": "confidence",
+      "options": [
+        {
+          "label": "Fairly confident",
+          "value": "confident",
+          "next": "p_lender"
+        },
+        {
+          "label": "We know uncertainty is high",
+          "value": "uncertain",
+          "next": "e_finance"
+        }
+      ]
+    },
+    {
+      "id": "p_lender",
+      "section": "Problem",
+      "question": "Have lenders/investors asked for on-site measurements?",
+      "help_text": "Most lenders require >=12 months on-site data for bankable EYA [confirm with client's lender].",
+      "type": "single",
+      "field": "lender_asked",
+      "options": [
+        {
+          "label": "Yes / likely will",
+          "value": "yes",
+          "next": "e_finance"
+        },
+        {
+          "label": "Don't know",
+          "value": "unknown",
+          "next": "e_finance"
+        },
+        {
+          "label": "No lender involved",
+          "value": "no",
+          "next": "e_finance"
+        }
+      ]
+    },
+    {
+      "id": "p_extrap",
+      "section": "Problem",
+      "question": "Do your existing data reach the planned hub height at the turbine locations?",
+      "help_text": "",
+      "type": "single",
+      "field": "data_gap",
+      "options": [
+        {
+          "label": "No",
+          "value": "gap",
+          "next": "e_extrap"
+        },
+        {
+          "label": "Not sure",
+          "value": "unsure",
+          "next": "e_extrap"
+        },
+        {
+          "label": "Yes",
+          "value": "ok",
+          "next": "e_finance"
+        }
+      ]
+    },
+    {
+      "id": "p_blocker",
+      "section": "Problem",
+      "question": "What is stopping the campaign from starting?",
+      "help_text": "",
+      "type": "single",
+      "field": "blocker",
+      "options": [
+        {
+          "label": "Cost of a tall met mast",
+          "value": "cost",
+          "next": "e_mast"
+        },
+        {
+          "label": "Permits / installation time",
+          "value": "permits",
+          "next": "e_mast"
+        },
+        {
+          "label": "No supplier found",
+          "value": "supplier",
+          "next": "sol"
+        },
+        {
+          "label": "Internal decision pending",
+          "value": "decision",
+          "next": "e_finance"
+        }
+      ]
+    },
+    {
+      "id": "e_finance",
+      "section": "Effect",
+      "question": "Without 12 months on-site data, P90 drops and financing is costlier. What would a 6-12 month delay cost you?",
+      "help_text": "SPIN Effect: let client quantify impact.",
+      "type": "single",
+      "field": "impact_ack",
+      "options": [
+        {
+          "label": "Significant impact",
+          "value": "high",
+          "next": "sol"
+        },
+        {
+          "label": "We're not in a hurry",
+          "value": "low",
+          "next": "e_time"
+        }
+      ]
+    },
+    {
+      "id": "e_extrap",
+      "section": "Effect",
+      "question": "Extrapolation adds uncertainty auditors penalise. Would measuring at hub height directly reduce your risk?",
+      "help_text": "",
+      "type": "single",
+      "field": "impact_ack",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "high",
+          "next": "sol"
+        },
+        {
+          "label": "Not convinced",
+          "value": "low",
+          "next": "e_time"
+        }
+      ]
+    },
+    {
+      "id": "e_mast",
+      "section": "Effect",
+      "question": "A tall mast needs permits and months of installation. LiDAR installs in days without mast permits [confirm local permit rules]. Does that change your timeline?",
+      "help_text": "",
+      "type": "single",
+      "field": "impact_ack",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "high",
+          "next": "sol"
+        },
+        {
+          "label": "Not really",
+          "value": "low",
+          "next": "e_time"
+        }
+      ]
+    },
+    {
+      "id": "e_time",
+      "section": "Effect",
+      "question": "Campaigns need min. 12 months for bankability. Starting now means data ready when you reach financing. Does that resonate?",
+      "help_text": "",
+      "type": "single",
+      "field": "urgency_ack",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "yes",
+          "next": "sol"
+        },
+        {
+          "label": "No",
+          "value": "no",
+          "next": "fu_date"
+        }
+      ]
+    },
+    {
+      "id": "sol",
+      "section": "Solution",
+      "question": "Would it help to see a proposal for your site? Then I need a few technical details.",
+      "help_text": "Transition to scoping.",
+      "type": "single",
+      "field": "proposal_wanted",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "yes",
+          "next": "sites"
+        },
+        {
+          "label": "Cost concern first",
+          "value": "cost",
+          "next": "obj_cost"
+        },
+        {
+          "label": "Doubts about LiDAR credibility",
+          "value": "cred",
+          "next": "obj_cred"
+        }
+      ]
+    },
+    {
+      "id": "obj_cost",
+      "section": "Solution",
+      "question": "Compared with costlier finance or lower P90, the campaign is a small fraction. Shall we scope it to give you a figure?",
+      "help_text": "Benchmark: 12-month turnkey 69-90k EUR (5.4-7.3k/month). Rental and client-assisted install discount possible.",
+      "type": "single",
+      "field": "obj_cost_res",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "yes",
+          "next": "sites"
+        },
+        {
+          "label": "No",
+          "value": "no",
+          "next": "fu_date"
+        }
+      ]
+    },
+    {
+      "id": "obj_cred",
+      "section": "Solution",
+      "question": "Verified LiDAR is accepted under IEC 61400-50-2 and by consultants; we deliver data in the format your consultant needs. Proceed?",
+      "help_text": "Pre-deployment verification vs reference mast is key. Leice bankability track record [confirm]; ZX300e/WindCube widely accepted.",
+      "type": "single",
+      "field": "obj_cred_res",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "yes",
+          "next": "sites"
+        },
+        {
+          "label": "Need consultant opinion",
+          "value": "consultant",
+          "next": "sites"
+        },
+        {
+          "label": "No",
+          "value": "no",
+          "next": "fu_date"
+        }
+      ]
+    },
+    {
+      "id": "sites",
+      "section": "Scope",
+      "question": "How many measurement locations / sites?",
+      "help_text": "Multi-site = multiple units or relocation plan.",
+      "type": "single",
+      "field": "num_sites",
+      "options": [
+        {
+          "label": "1",
+          "value": "1",
+          "next": "location"
+        },
+        {
+          "label": "2-3",
+          "value": "2-3",
+          "next": "location"
+        },
+        {
+          "label": "4+",
+          "value": "4+",
+          "next": "location"
+        }
+      ]
+    },
+    {
+      "id": "location",
+      "section": "Scope",
+      "question": "Site location (county / coordinates)?",
+      "help_text": "Needed for logistics and proposal.",
+      "type": "input",
+      "field": "location",
+      "options": [],
+      "next": "terrain"
+    },
+    {
+      "id": "terrain",
+      "section": "Scope",
+      "question": "Terrain type?",
+      "help_text": "Complex terrain: vertical LiDAR measures volume-averaged flow; may need CFD or flow-correction [confirm].",
+      "type": "single",
+      "field": "terrain",
+      "options": [
+        {
+          "label": "Flat / agricultural",
+          "value": "flat",
+          "next": "access"
+        },
+        {
+          "label": "Rolling hills",
+          "value": "rolling",
+          "next": "access"
+        },
+        {
+          "label": "Complex / forested / mountainous",
+          "value": "complex",
+          "next": "access"
+        },
+        {
+          "label": "Offshore / coastal",
+          "value": "coastal",
+          "next": "access"
+        }
+      ]
+    },
+    {
+      "id": "access",
+      "section": "Scope",
+      "question": "Site access for a trailer/van?",
+      "help_text": "",
+      "type": "single",
+      "field": "access",
+      "options": [
+        {
+          "label": "Paved / good road",
+          "value": "good",
+          "next": "hub"
+        },
+        {
+          "label": "Dirt road, seasonal",
+          "value": "seasonal",
+          "next": "hub"
+        },
+        {
+          "label": "Difficult / 4x4 only",
+          "value": "difficult",
+          "next": "hub"
+        }
+      ]
+    },
+    {
+      "id": "hub",
+      "section": "Scope",
+      "question": "Turbine model, number and hub height?",
+      "help_text": "Measure at hub height and +/- rotor; tip height may exceed 250 m.",
+      "type": "single",
+      "field": "hub_height",
+      "options": [
+        {
+          "label": "<= 120 m",
+          "value": "le120",
+          "next": "heights"
+        },
+        {
+          "label": "120-170 m",
+          "value": "120-170",
+          "next": "heights"
+        },
+        {
+          "label": "170-200 m",
+          "value": "170-200",
+          "next": "heights"
+        },
+        {
+          "label": "> 200 m / unknown",
+          "value": "gt200",
+          "next": "heights"
+        }
+      ]
+    },
+    {
+      "id": "heights",
+      "section": "Scope",
+      "question": "Required measurement heights / max height?",
+      "help_text": "ZX300e max certified range ~200 m [confirm]; WP350 to 350 m; PBL(S) to 800 m (wind profiling, also shear/veer studies).",
+      "type": "single",
+      "field": "max_height",
+      "options": [
+        {
+          "label": "Up to 200 m",
+          "value": "le200",
+          "next": "duration"
+        },
+        {
+          "label": "200-350 m",
+          "value": "200-350",
+          "next": "duration"
+        },
+        {
+          "label": "Above 350 m / profiling",
+          "value": "gt350",
+          "next": "duration"
+        }
+      ]
+    },
+    {
+      "id": "duration",
+      "section": "Scope",
+      "question": "Campaign duration?",
+      "help_text": "Bankable: 12 months min. Offer fixed price per extra month.",
+      "type": "single",
+      "field": "duration",
+      "options": [
+        {
+          "label": "3-6 months (verification / short)",
+          "value": "short",
+          "next": "bank"
+        },
+        {
+          "label": "12 months",
+          "value": "12",
+          "next": "bank"
+        },
+        {
+          "label": "> 12 months",
+          "value": "long",
+          "next": "bank"
+        }
+      ]
+    },
+    {
+      "id": "bank",
+      "section": "Bankability",
+      "question": "Will a lender or energy consultant review the data?",
+      "help_text": "",
+      "type": "single",
+      "field": "bankability",
+      "options": [
+        {
+          "label": "Yes, bank-grade required",
+          "value": "bank",
+          "next": "standards"
+        },
+        {
+          "label": "Internal decision only",
+          "value": "internal",
+          "next": "mast_exist"
+        }
+      ]
+    },
+    {
+      "id": "standards",
+      "section": "Bankability",
+      "question": "Which requirements apply?",
+      "help_text": "Pre-verification vs reference mast 5.5-7.6k EUR each (market). Post-verification often requested by consultants.",
+      "type": "multi",
+      "field": "standards",
+      "options": [
+        {
+          "label": "IEC 61400-50-2",
+          "value": "iec",
+          "next": "consultant"
+        },
+        {
+          "label": "MEASNET",
+          "value": "measnet",
+          "next": "consultant"
+        },
+        {
+          "label": "Pre-deployment verification",
+          "value": "pre_verif",
+          "next": "consultant"
+        },
+        {
+          "label": "Post-campaign verification",
+          "value": "post_verif",
+          "next": "consultant"
+        },
+        {
+          "label": "Don't know",
+          "value": "unknown",
+          "next": "consultant"
+        }
+      ]
+    },
+    {
+      "id": "consultant",
+      "section": "Bankability",
+      "question": "Is an energy consultant already appointed (DNV, UL, etc.)?",
+      "help_text": "Ask for their data spec early.",
+      "type": "input",
+      "field": "consultant",
+      "options": [],
+      "next": "mast_exist"
+    },
+    {
+      "id": "mast_exist",
+      "section": "Logistics",
+      "question": "Any met mast on/near site we can use for verification or correlation?",
+      "help_text": "",
+      "type": "single",
+      "field": "mast_on_site",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "yes",
+          "next": "power"
+        },
+        {
+          "label": "No",
+          "value": "no",
+          "next": "power"
+        }
+      ]
+    },
+    {
+      "id": "power",
+      "section": "Logistics",
+      "question": "Is grid power available at the LiDAR location?",
+      "help_text": "Leice offers exclude power: add power trailer. ZX300e Ge:Net package includes solar/methanol container.",
+      "type": "single",
+      "field": "power",
+      "options": [
+        {
+          "label": "Grid power available",
+          "value": "grid",
+          "next": "security"
+        },
+        {
+          "label": "No power - autonomous needed",
+          "value": "autonomous",
+          "next": "security"
+        },
+        {
+          "label": "Unknown",
+          "value": "unknown",
+          "next": "security"
+        }
+      ]
+    },
+    {
+      "id": "security",
+      "section": "Logistics",
+      "question": "Security on site?",
+      "help_text": "Theft/vandalism risk: fence, GPS tracker, CCTV, insurance.",
+      "type": "single",
+      "field": "security",
+      "options": [
+        {
+          "label": "Fenced / guarded",
+          "value": "guarded",
+          "next": "permits"
+        },
+        {
+          "label": "Open field",
+          "value": "open",
+          "next": "permits"
+        },
+        {
+          "label": "High risk area",
+          "value": "high",
+          "next": "permits"
+        }
+      ]
+    },
+    {
+      "id": "permits",
+      "section": "Logistics",
+      "question": "Land access and permits status?",
+      "help_text": "LiDAR usually needs only landowner agreement [confirm with local authority].",
+      "type": "single",
+      "field": "permits",
+      "options": [
+        {
+          "label": "Landowner agreement in place",
+          "value": "ok",
+          "next": "timeline"
+        },
+        {
+          "label": "Needs to be arranged",
+          "value": "todo",
+          "next": "timeline"
+        },
+        {
+          "label": "Client will help locally",
+          "value": "client_help",
+          "next": "timeline"
+        }
+      ]
+    },
+    {
+      "id": "timeline",
+      "section": "Commercial",
+      "question": "Desired start date?",
+      "help_text": "Leice delivery 4-6 weeks after order.",
+      "type": "single",
+      "field": "start",
+      "options": [
+        {
+          "label": "ASAP (< 1 month)",
+          "value": "asap",
+          "next": "reporting"
+        },
+        {
+          "label": "1-3 months",
+          "value": "1-3m",
+          "next": "reporting"
+        },
+        {
+          "label": "> 3 months",
+          "value": "later",
+          "next": "reporting"
+        }
+      ]
+    },
+    {
+      "id": "reporting",
+      "section": "Commercial",
+      "question": "Data delivery and reporting needs?",
+      "help_text": "",
+      "type": "multi",
+      "field": "reporting",
+      "options": [
+        {
+          "label": "Online live data access",
+          "value": "live",
+          "next": "eya"
+        },
+        {
+          "label": "Monthly reports",
+          "value": "monthly",
+          "next": "eya"
+        },
+        {
+          "label": "Final campaign report",
+          "value": "final",
+          "next": "eya"
+        },
+        {
+          "label": "Raw + filtered data in consultant format",
+          "value": "raw",
+          "next": "eya"
+        }
+      ]
+    },
+    {
+      "id": "eya",
+      "section": "Commercial",
+      "question": "Do you also need an Energy Yield Assessment?",
+      "help_text": "Market EYA 8.5-9.9k EUR, separate service.",
+      "type": "single",
+      "field": "eya",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "yes",
+          "next": "budget"
+        },
+        {
+          "label": "Maybe later",
+          "value": "later",
+          "next": "budget"
+        },
+        {
+          "label": "No / consultant does it",
+          "value": "no",
+          "next": "budget"
+        }
+      ]
+    },
+    {
+      "id": "budget",
+      "section": "Commercial",
+      "question": "Is there a budget range?",
+      "help_text": "Benchmark 69-90k EUR / 12 months turnkey.",
+      "type": "single",
+      "field": "budget",
+      "options": [
+        {
+          "label": "< 60k EUR",
+          "value": "lt60",
+          "next": "decision"
+        },
+        {
+          "label": "60-90k EUR",
+          "value": "60-90",
+          "next": "decision"
+        },
+        {
+          "label": "> 90k EUR",
+          "value": "gt90",
+          "next": "decision"
+        },
+        {
+          "label": "Not defined",
+          "value": "undef",
+          "next": "decision"
+        }
+      ]
+    },
+    {
+      "id": "decision",
+      "section": "Commercial",
+      "question": "Who decides and how (approval process, other bidders)?",
+      "help_text": "",
+      "type": "input",
+      "field": "decision_makers",
+      "options": [],
+      "next": "next_step"
+    },
+    {
+      "id": "next_step",
+      "section": "Close",
+      "question": "Can we schedule a technical call this week to finalise the proposal?",
+      "help_text": "",
+      "type": "single",
+      "field": "next_step",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "call",
+          "next": "summary"
+        },
+        {
+          "label": "Send proposal directly",
+          "value": "proposal",
+          "next": "summary"
+        },
+        {
+          "label": "Later",
+          "value": "later",
+          "next": "summary"
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "section": "Summary",
+      "question": "Summary of answers and proposed campaign scope",
+      "help_text": "Auto-generated from fields via offer_mapping.",
+      "type": "summary",
+      "field": "summary",
+      "options": []
+    }
+  ],
+  "offer_mapping": [
+    {
+      "if": {
+        "max_height": "le200",
+        "power": "autonomous"
+      },
+      "scope": {
+        "equipment": "ZX300e + solar/methanol container (Ge:Net) or Leice WP350 + power trailer"
+      }
+    },
+    {
+      "if": {
+        "max_height": "le200"
+      },
+      "scope": {
+        "equipment": "Leice WindMast WP350 or ZX300e"
+      }
+    },
+    {
+      "if": {
+        "max_height": "200-350"
+      },
+      "scope": {
+        "equipment": "Leice WindMast WP350"
+      }
+    },
+    {
+      "if": {
+        "max_height": "gt350"
+      },
+      "scope": {
+        "equipment": "Leice WindMast PBL(S)"
+      }
+    },
+    {
+      "if": {
+        "power": [
+          "autonomous",
+          "unknown"
+        ]
+      },
+      "scope": {
+        "power": "Autonomous power trailer / solar-methanol unit"
+      }
+    },
+    {
+      "if": {
+        "power": "grid"
+      },
+      "scope": {
+        "power": "Grid connection"
+      }
+    },
+    {
+      "if": {
+        "duration": "short"
+      },
+      "scope": {
+        "duration": "3-6 months"
+      }
+    },
+    {
+      "if": {
+        "duration": "12"
+      },
+      "scope": {
+        "duration": "12 months + price per extra month"
+      }
+    },
+    {
+      "if": {
+        "duration": "long"
+      },
+      "scope": {
+        "duration": ">12 months + price per extra month"
+      }
+    },
+    {
+      "if": {
+        "standards": "pre_verif"
+      },
+      "scope": {
+        "verification": "Pre-deployment verification (5.5-7.6k EUR market)"
+      }
+    },
+    {
+      "if": {
+        "standards": "post_verif"
+      },
+      "scope": {
+        "verification": "Post-campaign verification"
+      }
+    },
+    {
+      "if": {
+        "bankability": "bank"
+      },
+      "scope": {
+        "verification": "IEC 61400-50-2 compliant verification required",
+        "extras": "Data availability guarantee, backup LiDAR"
+      }
+    },
+    {
+      "if": {
+        "mast_on_site": "yes"
+      },
+      "scope": {
+        "verification": "Verify/correlate against on-site mast"
+      }
+    },
+    {
+      "if": {
+        "reporting": "*"
+      },
+      "scope": {
+        "reporting": "from field reporting"
+      }
+    },
+    {
+      "if": {
+        "eya": "yes"
+      },
+      "scope": {
+        "eya": "EYA option 8.5-9.9k EUR"
+      }
+    },
+    {
+      "if": {
+        "security": [
+          "open",
+          "high"
+        ]
+      },
+      "scope": {
+        "extras": "Fence, GPS tracker, insurance"
+      }
+    },
+    {
+      "if": {
+        "permits": "client_help"
+      },
+      "scope": {
+        "extras": "Client-assisted installation discount"
+      }
+    },
+    {
+      "if": {
+        "num_sites": [
+          "2-3",
+          "4+"
+        ]
+      },
+      "scope": {
+        "extras": "Multi-unit or relocation plan"
+      }
+    },
+    {
+      "if": {
+        "terrain": "complex"
+      },
+      "scope": {
+        "extras": "Complex terrain flow correction / CFD [confirm]"
+      }
+    },
+    {
+      "if": {
+        "hub_height": [
+          "170-200",
+          "gt200"
+        ]
+      },
+      "scope": {
+        "heights": "Measure to tip height; check LiDAR range"
+      }
+    }
+  ]
+}

@@ -21,7 +21,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 function doppler_lidar_hreflang_pairs() {
 	return array(
 		'/'                                 => '/ro/',
-		'/wind-lidar-measurement-campaigns/' => '/ro/campanii-masurare-vant-lidar/',
 		'/lidar-or-a-met-mast/'             => '/ro/blog/lidar-sau-turn-de-masura/',
 		'/how-turnkey-wind-lidar-campaign-works/' => '/ro/blog/cum-se-desfasoara-campanie-masurare-vant/',
 		// SEO test C1: page 89 <-> page 91. Emitted only when both are published.

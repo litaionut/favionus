@@ -1,0 +1,79 @@
+name: Deploy to Bluehost
+
+on:
+  push:
+    branches: [main, deploy-setup]
+  workflow_dispatch:
+    inputs:
+      target_dir:
+        description: "Folder under the FTP root (empty = live web root)"
+        required: false
+        default: ""
+      cleanup:
+        description: "Delete target_dir instead of deploying (only deploy-test* allowed)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-bluehost
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Live deploys on push to main only when repo variable LIVE_DEPLOY_ENABLED == 'true'
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main' || vars.LIVE_DEPLOY_ENABLED == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute target
+        id: t
+        env:
+          ROOT: ${{ vars.FTP_ROOT || '/' }}
+          INPUT: ${{ github.event.inputs.target_dir }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then INPUT="deploy-test/"; fi
+          ROOT="${ROOT%/}/"
+          if [ -n "$INPUT" ]; then DIR="${ROOT}${INPUT#/}"; DIR="${DIR%/}/"; else DIR="$ROOT"; fi
+          if [ "${{ github.event.inputs.cleanup }}" = "true" ]; then
+            case "$INPUT" in deploy-test*) ;; *) echo "Cleanup only allowed for deploy-test*"; exit 1;; esac
+          fi
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Deploying to $DIR"
+
+      - name: Remove test folder
+        if: github.event.inputs.cleanup == 'true'
+        env:
+          S: ${{ secrets.FTP_SERVER }}
+          U: ${{ secrets.FTP_USERNAME }}
+          P: ${{ secrets.FTP_PASSWORD }}
+          DIR: ${{ steps.t.outputs.dir }}
+        run: |
+          sudo apt-get install -y -qq lftp >/dev/null
+          lftp -u "$U,$P" -e "set ftp:ssl-force true; set ssl:verify-certificate no; rm -r $DIR; bye" "$S"
+
+      - name: FTP deploy
+        if: github.event.inputs.cleanup != 'true'
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          server-dir: ${{ steps.t.outputs.dir }}
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .github/**
+            wp-config.php
+            wp-content/uploads/**
+            wp-content/cache/**
+            .htaccess
+            **/.htaccess
+            .ftpquota
+            .well-known/**
+            README.md
+            **/.env
+            **/.env.*
